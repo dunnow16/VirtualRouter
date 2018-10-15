@@ -25,6 +25,9 @@
 //#include <netinet/if_ether.h>  // struct ether_arp 
 #include <netinet/ether.h>
 #include <netinet/ip.h>
+#include <sys/ioctl.h>  // get source mac addr
+#include <unistd.h>
+#include <net/if.h> 
 
 using namespace std;
 
@@ -86,7 +89,7 @@ int main(int argc, char** argv) {
 
         // listen to connections from clients, give a backlog number of up to 
 	    // 10 clients to accept at once, rejects all further clients
-        listen(packet_socket, 10);  // needed? TODO
+        //listen(packet_socket, 10);  // needed? TODO
         // adds the fd to the set pointed to (can do with any fd)
         FD_SET(packet_socket, &sockets); 
       }
@@ -140,10 +143,12 @@ int main(int argc, char** argv) {
                     pehdr = (struct ether_header *) buf; 
                     // only getting arp packets with ping r1/r2 (something wrong?)
                     switch (ntohs(pehdr->ether_type)) {  // endian conversion
-                    case 0x0800:
-                        cout << "IPv4 packet found" << endl;
-
-
+                    case 0x0800:  // ICMP embedded within
+                        cout << "IPv4 packet found" << endl;  
+                        // Check for ICMP here (within)
+                        // cout << "ICMP packet found" << endl;
+                        
+                        
                         break;
                     case 0x0806:
                         cout << "ARP packet found" << endl;
@@ -154,17 +159,93 @@ int main(int argc, char** argv) {
                         if (ntohs(peahdr->arp_op) == 1) {
                             cout << "ARP request made" << endl;
                             // Create packet to send back: TODO
+                            uint8_t packet[sizeof(struct ether_header) + sizeof(struct ether_arp)];
+                            struct ether_header* ehdr_reply = (struct ether_header*) packet;
+                            //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+                            struct ether_arp* eahdr_reply = (struct ether_arp*) (packet+ETHER_HDR_LEN);
+                            //ehdr_reply.ether_dhost = 
+//   uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
+//   uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
+//   uint16_t ether_type;		        /* packet type ID field	*/
+                            ehdr_reply->ether_type = pehdr->ether_type;
+                            memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+                            
+                            // Get the sources MAC addr
+                            char buf[1024];
+                            int success = 0;
+                            struct ifreq ifr;
+                            struct ifconf ifc;
+                            ifc.ifc_len = sizeof(buf);
+                            ifc.ifc_buf = buf;
+                            if (ioctl(i, SIOCGIFCONF, &ifc) == -1) {
+                                perror("MAC address");
+                                return 3;
+                            }
+                            struct ifreq* it = ifc.ifc_req;
+                            const struct ifreq* const end = it + (ifc.ifc_len / sizeof(struct ifreq));
 
+                            for (; it != end; ++it) {
+                                strcpy(ifr.ifr_name, it->ifr_name);
+                                if (ioctl(i, SIOCGIFFLAGS, &ifr) == 0) {
+                                    if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
+                                        if (ioctl(i, SIOCGIFHWADDR, &ifr) == 0) {
+                                            success = 1;
+                                            break;
+                                        }
+                                    }
+                                }
+                                else { 
+                                    perror("Retrieving MAC from socket");
+                                    return 4;
+                                }
+                            }
+                            unsigned char mac_address[6];
+                            if (success) memcpy(mac_address, ifr.ifr_hwaddr.sa_data, 6);
+                            cout << "MAC addr of interface found: " 
+                                << ether_ntoa((const ether_addr*)mac_address) << endl;
+                            memcpy(ehdr_reply->ether_shost, mac_address, ETH_ALEN);
+                             
                             // Send packet to ??? table lookup?
+                            //struct arphdr
+    //unsigned short int ar_op;		/* ARP opcode (command).  */
+    // unsigned short int ar_hrd;		/* Format of hardware address.  */
+    // unsigned short int ar_pro;		/* Format of protocol address.  */
+    // unsigned char ar_hln;		/* Length of hardware address.  */
+    // unsigned char ar_pln;		/* Length of protocol address.  */
 
+// #define	arp_hrd	ea_hdr.ar_hrd
+// #define	arp_pro	ea_hdr.ar_pro
+// #define	arp_hln	ea_hdr.ar_hln
+// #define	arp_pln	ea_hdr.ar_pln
+// #define	arp_op	ea_hdr.ar_op
+
+                            eahdr_reply->arp_op = htons(2);
+                            eahdr_reply->arp_hrd = peahdr->arp_hrd;
+                            eahdr_reply->arp_pro = peahdr->arp_pro;
+                            eahdr_reply->arp_hln = peahdr->arp_hln;
+                            eahdr_reply->arp_pln = peahdr->arp_pln;
+                            //struct ehter_arp
+
+     // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
+	// uint8_t arp_spa[4];		/* sender protocol address */
+	// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
+	// uint8_t arp_tpa[4];		/* target protocol address */
+                            uint8_t fakeMac[6] = {1,1,1,1,1,1};
+                            memcpy(eahdr_reply->arp_sha, mac_address, ETH_ALEN);
+                            memcpy(eahdr_reply->arp_spa, peahdr->arp_tpa, 4);
+                            memcpy(eahdr_reply->arp_tha, peahdr->arp_sha, ETH_ALEN);
+                            memcpy(eahdr_reply->arp_tpa, peahdr->arp_spa, 4);
+
+// ether_dhost
+// ether_shost
+                            // sizeof(*packet)
+                            send(i, packet, sizeof(struct ether_header) + sizeof(struct ether_arp), 0);
                         }
+                        // cout << "sending packet\n";
+                        // send(i, "asdfasdf", 9, 0);
 
                         break;
-                    case 0x8000:  // not sure (within ipv4?)
-                        cout << "ICMP packet found" << endl;
-                        // TODO
-
-                        break;
+                    
                     default:
                         cout << "Other packet type found: " <<  
                         ntohs(pehdr->ether_type) << endl;    
