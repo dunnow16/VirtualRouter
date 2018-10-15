@@ -10,7 +10,7 @@
  */
 
 #include <sys/socket.h> 
-#include <arpa/inet.h>  // htons()
+#include <arpa/inet.h>  // htons(), ...
 #include <netpacket/packet.h> 
 #include <net/ethernet.h>
 #include <stdio.h>
@@ -21,11 +21,15 @@
 #include <string>
 #include <string.h>  // strcmp (might want to use cpp version)
 #include <iostream> 
+#include <map>
+//#include <netinet/if_ether.h>  // struct ether_arp 
+#include <netinet/ether.h>
+#include <netinet/ip.h>
 
 using namespace std;
 
 
-int main(){
+int main(int argc, char** argv) {
   int packet_socket;
   fd_set sockets;  // everything interact with gets a fd, starts an empty set?
   FD_ZERO(&sockets);
@@ -102,7 +106,7 @@ int main(){
     // it modifies the parameter passed: holds only that have data to read  
     // takes fd set and checks sockets if are readable
     int fd_read_n = select(FD_SETSIZE, &tmp_set, NULL, NULL, NULL);
-    char buf[2000];  // how much room needed? (1500 data, all headers)
+    char buf[5000];  // how much room needed? (1500 data, all headers)
     struct sockaddr_ll recvaddr;
     socklen_t recvaddrlen = sizeof(struct sockaddr_ll);
 
@@ -115,7 +119,7 @@ int main(){
                 //this packet is incoming or outgoing (when using ETH_P_ALL, we
                 //see packets in both directions. Only outgoing can be seen when
                 //using a packet socket with some specific protocol)
-                int bytes_n = recvfrom(i, buf, 2000, 0,
+                int bytes_n = recvfrom(i, buf, 5000, 0,
                     (struct sockaddr*)&recvaddr, &recvaddrlen);
                 //ignore outgoing packets (we can't disable some from being sent
                 //by the OS automatically, for example ICMP port unreachable
@@ -123,11 +127,50 @@ int main(){
                 if(recvaddr.sll_pkttype == PACKET_OUTGOING)
                     continue;
                 //start processing all others
-                printf("Got a %d byte packet on %s\n", bytes_n, );
+                printf("Got a %d byte packet\n", bytes_n);
+
                 // TODO Process the packet and reply to any requests.
 
+                // Parse the ether header. Other header present depends on 
+                // what is found in the ether header.
+                struct ether_header* pehdr;  // 14 bytes
+                struct iphdr* piphdr;  // starts after ether hdr (size = )
+                struct ether_arp* peahdr;  // starts after ether hdr (size = )
+                if (bytes_n > 0) {
+                    pehdr = (struct ether_header *) buf; 
+                    // only getting arp packets with ping r1/r2 (something wrong?)
+                    switch (ntohs(pehdr->ether_type)) {  // endian conversion
+                    case 0x0800:
+                        cout << "IPv4 packet found" << endl;
 
 
+                        break;
+                    case 0x0806:
+                        cout << "ARP packet found" << endl;
+                        // Retrieve arp header: 
+                        peahdr = (struct ether_arp*) (buf + ETHER_HDR_LEN);
+                        // Check if request:
+                        cout << "op: " << ntohs(peahdr->arp_op) << endl;
+                        if (ntohs(peahdr->arp_op) == 1) {
+                            cout << "ARP request made" << endl;
+                            // Create packet to send back: TODO
+
+                            // Send packet to ??? table lookup?
+
+                        }
+
+                        break;
+                    case 0x8000:  // not sure (within ipv4?)
+                        cout << "ICMP packet found" << endl;
+                        // TODO
+
+                        break;
+                    default:
+                        cout << "Other packet type found: " <<  
+                        ntohs(pehdr->ether_type) << endl;    
+                    }
+                }
+                
             }
         }
     }
