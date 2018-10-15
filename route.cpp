@@ -31,6 +31,21 @@
 
 using namespace std;
 
+struct ouricmp {
+    u_int8_t type;
+    u_int8_t code;
+    u_int16_t checksum;
+    u_int16_t id;
+    u_int16_t sequence;
+};
+struct ouricmpts {
+    u_int8_t type;
+    u_int8_t code;
+    u_int16_t checksum;
+    u_int16_t id;
+    u_int16_t sequence;
+    u_int64_t timestamp;
+};
 
 int main(int argc, char** argv) {
   int packet_socket;
@@ -138,18 +153,101 @@ int main(int argc, char** argv) {
                 // what is found in the ether header.
                 struct ether_header* pehdr;  // 14 bytes
                 struct iphdr* piphdr;  // starts after ether hdr (size = )
+                struct ouricmp* icmphdr;  // starts after ether hdr (size = )
+                struct ouricmpts* tsicmphdr;  // starts after ether hdr (size = )
                 struct ether_arp* peahdr;  // starts after ether hdr (size = )
                 if (bytes_n > 0) {
                     pehdr = (struct ether_header *) buf; 
                     // only getting arp packets with ping r1/r2 (something wrong?)
                     switch (ntohs(pehdr->ether_type)) {  // endian conversion
                     case 0x0800:  // ICMP embedded within
+                        {
                         cout << "IPv4 packet found" << endl;  
+                        piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);
+                        icmphdr = (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                        tsicmphdr = (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
                         // Check for ICMP here (within)
                         // cout << "ICMP packet found" << endl;
-                        
-                        
-                        break;
+                        // Create packet to send back: TODO
+                        uint8_t packet[bytes_n];
+                        struct ether_header* ehdr_reply = (struct ether_header*) packet;
+                        //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+                        struct iphdr* iphdr_reply = (struct iphdr*) (packet+ETHER_HDR_LEN);
+                        struct ouricmp* icmphdr_reply = (struct ouricmp*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+                        struct ouricmpts* tsicmphdr_reply = (struct ouricmpts*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+
+                        // int timestamp = 0;
+                        int dataSize;
+                        // if (icmphdr->type == 8) {
+                        //     printf("timestamp\n");
+                        //     // timestamp = 8;
+                        //     dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmpts));
+                        //     tsicmphdr_reply->type = tsicmphdr->type;
+                        //     tsicmphdr_reply->code = tsicmphdr->code;
+                        //     tsicmphdr_reply->checksum = tsicmphdr->checksum;
+                        //     tsicmphdr_reply->id = tsicmphdr->id;
+                        //     tsicmphdr_reply->sequence = tsicmphdr->sequence;
+                        //     tsicmphdr_reply->timestamp = tsicmphdr->timestamp;
+                        // } else {
+                            dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmp));
+                            icmphdr_reply->type = icmphdr->type;
+                            icmphdr_reply->code = icmphdr->code;
+                            icmphdr_reply->checksum = icmphdr->checksum;
+                            icmphdr_reply->id = icmphdr->id;
+                            icmphdr_reply->sequence = icmphdr->sequence;
+                        // }
+
+                        char data[dataSize];
+                        for (int k = bytes_n - dataSize; k < bytes_n; k++) {
+                            data[k-bytes_n] = buf[k];
+                        }
+                        //memcpy(data, buf[bytes_n - dataSize], dataSize);
+
+                        //ethernet header
+                        ehdr_reply->ether_type = pehdr->ether_type;
+                        memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+                        memcpy(ehdr_reply->ether_shost, pehdr->ether_dhost, ETH_ALEN);
+                        //ip header                        
+// #if __BYTE_ORDER == __LITTLE_ENDIAN
+//     unsigned int ihl:4;
+//     unsigned int version:4;
+// #elif __BYTE_ORDER == __BIG_ENDIAN
+//     unsigned int version:4;
+//     unsigned int ihl:4;
+// #else
+// # error	"Please fix <bits/endian.h>"
+// #endif
+//     uint8_t tos;
+//     uint16_t tot_len;
+//     uint16_t id;
+//     uint16_t frag_off;
+//     uint8_t ttl;
+//     uint8_t protocol;
+//     uint16_t check;
+//     uint32_t saddr;
+//     uint32_t daddr;
+                        iphdr_reply->ihl = piphdr->ihl;
+                        iphdr_reply->version = piphdr->version;
+                        iphdr_reply->tos = piphdr->tos;
+                        iphdr_reply->tot_len = piphdr->tot_len;
+                        iphdr_reply->id = piphdr->id;
+                        iphdr_reply->frag_off = piphdr->frag_off;
+                        iphdr_reply->ttl = piphdr->ttl;
+                        iphdr_reply->protocol = piphdr->protocol;
+                        iphdr_reply->check = piphdr->check;
+                        iphdr_reply->saddr = piphdr->daddr;
+                        iphdr_reply->daddr = piphdr->saddr;
+                        //icmp header
+    // u_int8_t type;
+    // u_int8_t code;
+    // u_int16_t checksum;
+    // u_int16_t id;
+    // u_int16_t sequence;
+                       send(i, packet, bytes_n, 0);
+                       }
+
+                       break;
+
                     case 0x0806:
                         cout << "ARP packet found" << endl;
                         // Retrieve arp header: 
@@ -170,7 +268,7 @@ int main(int argc, char** argv) {
                             ehdr_reply->ether_type = pehdr->ether_type;
                             memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
                             
-                            // Get the sources MAC addr
+                            // Get the source's MAC addr
                             char buf[1024];
                             int success = 0;
                             struct ifreq ifr;
