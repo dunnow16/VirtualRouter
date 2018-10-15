@@ -1,0 +1,32 @@
+
+Make routers correct route traffic. Don't do anything at the start.
+Look up where to send packet, and then send, and so on to get to 
+the destination. Need mac addr: get using arp protocol. Send a msg
+to it to return this addr. Be able to send the msg across. 
+part 1: icmp echo request and arp request traffic handled, put into
+ping packet. Need to parse headers of packet to see what type. Get type
+out and check if it's ip or arp (like lab 4). 
+ntohs: get 2 byte numbers sent in right order.
+ethernet: 6 b dest, 6 b source, 2 byte type
+-type: if 8 prints, must have 0x0800 (was 0x0008)
+short type = ntohs(eth->ether_type) // network to host order?
+see ETHERTYPE_IP, etc in ethernet.h file to see what you should find
+char buf[1500]
+recv(s, buf, ..)
+struct ether_header e* = buf;  // this works
+memcpy(e, buf, 14)
+struct iphdr *ip = &buf[14] // length of ethernet hdr (starts where it ends)
+memcpy(ip, &buf[14], 20)
+/link/ip/transport/data/  (ip header order)
+with arp: start after ether hdr
+struct ether_arp {} // contains arphdr struct
+icmp:
+check if the type in the header similarly
+if dest is you, respond to it by flipping src and dst
+icmp struct hard to work with, may want to make your own
+networksorcery.com: good info on icmp and more. has diagram hdrs
+-definitions of all the fields
+ -rfcs: standards for network protocols above link layer
+ -ieee standards: used for link layer and below
+ lang: not java, python, c, c++ (map data structure useful)
+ 
