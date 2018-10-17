@@ -10,35 +10,35 @@
  */
 
 #include <sys/socket.h> 
+#include <sys/select.h> // select()
+#include <sys/ioctl.h>  // get source mac addr
 #include <arpa/inet.h>  // htons(), ...
 #include <netpacket/packet.h> 
 #include <net/ethernet.h>
+#include <net/if.h> 
+#include <netinet/ether.h>
+#include <netinet/ip.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <ifaddrs.h>
-#include <sys/select.h> // select()
 #include <string>
 #include <string.h>  // strcmp (might want to use cpp version)
+#include <unistd.h>
 #include <iostream> 
 #include <map>
-//#include <netinet/if_ether.h>  // struct ether_arp 
-#include <netinet/ether.h>
-#include <netinet/ip.h>
-#include <sys/ioctl.h>  // get source mac addr
-#include <unistd.h>
-#include <net/if.h> 
+
 
 using namespace std;
 
-struct ouricmp {
+struct ouricmp {  // 64 bytes
     u_int8_t type;
     u_int8_t code;
     u_int16_t checksum;
     u_int16_t id;
     u_int16_t sequence;
 };
-struct ouricmpts {
+struct ouricmpts {  // 128 bytes
     u_int8_t type;
     u_int8_t code;
     u_int16_t checksum;
@@ -51,6 +51,8 @@ int main(int argc, char** argv) {
   int packet_socket;
   fd_set sockets;  // everything interact with gets a fd, starts an empty set?
   FD_ZERO(&sockets);
+
+  //map() port number=mac
 
   //get list of interface addresses. This is a linked list. Next
   //pointer is in ifa_next, interface name is in ifa_name, address is
@@ -71,7 +73,7 @@ int main(int argc, char** argv) {
     //about those for the purpose of enumerating interfaces. We can
     //use the AF_INET addresses in this list for example to get a list
     //of our own IP addresses
-    if(tmp->ifa_addr->sa_family==AF_PACKET) {
+    if(tmp->ifa_addr->sa_family == AF_PACKET) {
       printf("Interface: %s\n",tmp->ifa_name);
       //create a packet socket on interface r?-eth1
       // eth0 to eth3 on table: allow any of these interfaces
@@ -79,6 +81,10 @@ int main(int argc, char** argv) {
          !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
          !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
          !strncmp(&(tmp->ifa_name[3]),"eth3",4) ) {  
+        // Get MAC addr
+        // ifa_addr is "network addr" = mac?
+        cout << tmp->ifa_addr->sa_data << endl;
+
         printf("Creating Socket on interface %s\n",tmp->ifa_name);
         //create a packet socket
         //AF_PACKET makes it a packet socket
@@ -104,7 +110,7 @@ int main(int argc, char** argv) {
 
         // listen to connections from clients, give a backlog number of up to 
 	    // 10 clients to accept at once, rejects all further clients
-        //listen(packet_socket, 10);  // needed? TODO
+        listen(packet_socket, 10);  // needed? TODO
         // adds the fd to the set pointed to (can do with any fd)
         FD_SET(packet_socket, &sockets); 
       }
