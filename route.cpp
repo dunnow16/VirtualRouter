@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <iostream> 
 #include <map>
+//#include <vector>
 
 
 using namespace std;
@@ -53,6 +54,10 @@ int main(int argc, char** argv) {
   FD_ZERO(&sockets);
 
   //map() port number=mac
+	//interface name = port number
+	map <int, char*>  port2mac;
+	map <char*, int>  name2port;
+
 
   //get list of interface addresses. This is a linked list. Next
   //pointer is in ifa_next, interface name is in ifa_name, address is
@@ -83,7 +88,35 @@ int main(int argc, char** argv) {
          !strncmp(&(tmp->ifa_name[3]),"eth3",4) ) {  
         // Get MAC addr
         // ifa_addr is "network addr" = mac?
-        cout << tmp->ifa_addr->sa_data << endl;
+		//for (int k = 0; k < 14; k++) {
+
+			char* mac = new char[6];
+			for (int k = 10; k <= 15; k++) {
+				mac[k-10] = tmp->ifa_addr->sa_data[k];
+			}
+			/*
+			printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+			(unsigned char) tmp->ifa_addr->sa_data[10],
+			(unsigned char) tmp->ifa_addr->sa_data[11],
+			(unsigned char) tmp->ifa_addr->sa_data[12],
+			(unsigned char) tmp->ifa_addr->sa_data[13],
+			(unsigned char) tmp->ifa_addr->sa_data[14],
+			(unsigned char) tmp->ifa_addr->sa_data[15]
+			);*/
+			printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+			(unsigned char) mac[0],
+			(unsigned char) mac[1],
+			(unsigned char) mac[2],
+			(unsigned char) mac[3],
+			(unsigned char) mac[4],
+			(unsigned char) mac[5]
+			);
+			//printf("%x", tmp->ifa_addr->sa_data[k]);
+			//if (k % 2 == 0 && k > 0) cout << ":";
+			//printf("%i", tmp->ifa_addr->sa_data[k]);
+        	//cout << tmp->ifa_addr->sa_data[k];
+		//}
+		//cout << endl;
 
         printf("Creating Socket on interface %s\n",tmp->ifa_name);
         //create a packet socket
@@ -93,6 +126,9 @@ int main(int argc, char** argv) {
         //ETH_P_ALL indicates we want all (upper layer) protocols
         //we could specify just a specific one
         packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+
+		port2mac.insert(pair<int, char*>(packet_socket, mac));
+
         if(packet_socket<0) {
           perror("socket");
           return 2;
@@ -116,6 +152,18 @@ int main(int argc, char** argv) {
       }
     }
   }
+
+	map<int, char*>::iterator p;
+	//p = port2mac.begin();
+	//cout << p->second << endl;
+	/*		printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+			(unsigned char) p->second[0],
+			(unsigned char) p->second[1],
+			(unsigned char) p->second[2],
+			(unsigned char) p->second[3],
+			(unsigned char) p->second[4],
+			(unsigned char) p->second[5]
+			);*/
   
 
   //loop and recieve packets. We are only looking at one interface,
@@ -274,6 +322,7 @@ int main(int argc, char** argv) {
                             ehdr_reply->ether_type = pehdr->ether_type;
                             memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
                             
+							/*
                             // Get the source's MAC addr
                             char buf[1024];
                             int success = 0;
@@ -308,7 +357,7 @@ int main(int argc, char** argv) {
                             cout << "MAC addr of interface found: " 
                                 << ether_ntoa((const ether_addr*)mac_address) << endl;
                             memcpy(ehdr_reply->ether_shost, mac_address, ETH_ALEN);
-                             
+                             */
                             // Send packet to ??? table lookup?
                             //struct arphdr
     //unsigned short int ar_op;		/* ARP opcode (command).  */
@@ -328,14 +377,24 @@ int main(int argc, char** argv) {
                             eahdr_reply->arp_pro = peahdr->arp_pro;
                             eahdr_reply->arp_hln = peahdr->arp_hln;
                             eahdr_reply->arp_pln = peahdr->arp_pln;
-                            //struct ehter_arp
+                            //struct ether_arp
 
      // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
 	// uint8_t arp_spa[4];		/* sender protocol address */
 	// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
 	// uint8_t arp_tpa[4];		/* target protocol address */
                             uint8_t fakeMac[6] = {1,1,1,1,1,1};
-                            memcpy(eahdr_reply->arp_sha, mac_address, ETH_ALEN);
+							char* t = port2mac[i];
+                            uint8_t macAddress[6] = {
+									(uint8_t) t[0],
+									(uint8_t) t[1],
+									(uint8_t) t[2],
+									(uint8_t) t[3],
+									(uint8_t) t[4],
+									(uint8_t) t[5],
+								};
+							
+                            memcpy(eahdr_reply->arp_sha, macAddress, ETH_ALEN);
                             memcpy(eahdr_reply->arp_spa, peahdr->arp_tpa, 4);
                             memcpy(eahdr_reply->arp_tha, peahdr->arp_sha, ETH_ALEN);
                             memcpy(eahdr_reply->arp_tpa, peahdr->arp_spa, 4);
