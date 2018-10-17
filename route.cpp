@@ -244,18 +244,21 @@ int main(int argc, char** argv) {
                         //     tsicmphdr_reply->timestamp = tsicmphdr->timestamp;
                         // } else {
                             dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmp));
-                            icmphdr_reply->type = icmphdr->type;
+                            icmphdr_reply->type = htons(8);
                             icmphdr_reply->code = icmphdr->code;
                             icmphdr_reply->checksum = icmphdr->checksum;
                             icmphdr_reply->id = icmphdr->id;
                             icmphdr_reply->sequence = icmphdr->sequence;
                         // }
 
-                        char data[dataSize];
+                        //char data[dataSize];
+						/*
                         for (int k = bytes_n - dataSize; k < bytes_n; k++) {
                             data[k-bytes_n] = buf[k];
                         }
-                        //memcpy(data, buf[bytes_n - dataSize], dataSize);
+						*/
+                        //memcpy(data, buf + [bytes_n - dataSize], dataSize);
+                        memcpy(packet + (ETHER_HDR_LEN+sizeof(struct iphdr)) + sizeof(struct ouricmp), buf + bytes_n - dataSize, dataSize);
 
                         //ethernet header
                         ehdr_reply->ether_type = pehdr->ether_type;
