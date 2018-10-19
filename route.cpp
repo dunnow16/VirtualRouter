@@ -27,8 +27,11 @@
 #include <unistd.h>
 #include <iostream> 
 #include <map>
+#include <string.h>
 //#include <vector>
-
+//#include <sstream> // for int to char* conversions (stringstream)
+//#include<stdlib.h>
+#include <math.h> //for power
 
 using namespace std;
 
@@ -56,8 +59,9 @@ int main(int argc, char** argv) {
   //map() port number=mac
 	//interface name = port number
 	map <int, char*>  port2mac;
+	// map <int, uint32_t>  port2mac;
 	map <char*, int>  name2port;
-
+    map <char*, char*> name2ip; // for router's own ip addresses
 
   //get list of interface addresses. This is a linked list. Next
   //pointer is in ifa_next, interface name is in ifa_name, address is
@@ -71,6 +75,7 @@ int main(int argc, char** argv) {
     perror("getifaddrs");
     return 1;
   }
+  
   //have the list, loop over the list
   for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
     //Check if this is a packet address, there will be one per
@@ -128,6 +133,14 @@ int main(int argc, char** argv) {
         packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 
 		port2mac.insert(pair<int, char*>(packet_socket, mac));
+
+        //update name2port
+        char* t = new char(8);
+        strcpy(t, tmp->ifa_name);
+        name2port.insert(pair<char*, int>(t, packet_socket));
+        //if(!strncmp(tmp->ifa_name,"r1-eth0",7) ) {
+            cout << "name2port key: " << t << " value: " << packet_socket << endl;
+        //}
 
         if(packet_socket<0) {
           perror("socket");
@@ -218,91 +231,204 @@ int main(int argc, char** argv) {
                         {
                         cout << "IPv4 packet found" << endl;  
                         piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);
-                        icmphdr = (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
-                        tsicmphdr = (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
-                        // Check for ICMP here (within)
-                        // cout << "ICMP packet found" << endl;
-                        // Create packet to send back: TODO
-                        uint8_t packet[bytes_n];
-                        struct ether_header* ehdr_reply = (struct ether_header*) packet;
-                        //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
-                        struct iphdr* iphdr_reply = (struct iphdr*) (packet+ETHER_HDR_LEN);
-                        struct ouricmp* icmphdr_reply = (struct ouricmp*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
-                        struct ouricmpts* tsicmphdr_reply = (struct ouricmpts*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+        // FILE *fptr;
+        // fptr = fopen(fileName, "rb");
+        // if (fptr == NULL)
+        // {
+        //     printf("Cannot open file \n");
+        // data[0] = '\0';
+        //     exit(0);
+        // }
+                        // char* pchar = (char *) &(piphdr->saddr);
+                        // for (int k = 0; k < 7; k++) cout << pchar[k];
 
-                        // int timestamp = 0;
-                        int dataSize;
-                        // if (icmphdr->type == 8) {
-                        //     printf("timestamp\n");
-                        //     // timestamp = 8;
-                        //     dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmpts));
-                        //     tsicmphdr_reply->type = tsicmphdr->type;
-                        //     tsicmphdr_reply->code = tsicmphdr->code;
-                        //     tsicmphdr_reply->checksum = tsicmphdr->checksum;
-                        //     tsicmphdr_reply->id = tsicmphdr->id;
-                        //     tsicmphdr_reply->sequence = tsicmphdr->sequence;
-                        //     tsicmphdr_reply->timestamp = tsicmphdr->timestamp;
+                        uint32_t t = 0;
+                        for (int k = 0; k < 7; k++) t += port2mac[i][k] * pow(256, k);
+                        char pchar[7] = "" ;
+
+                        //itoa(piphdr->saddr,pchar,7);
+                        // sprintf(pchar, "%d", piphdr->saddr);
+
+                        //suint32_t:%02x:%02x:%02x:%02x:%02x\n",piphdr->saddr);
+                        //suint32_t:%02x:%02x:%02x:%02x:%02x\n",piphdr->saddr);
+                        //iuint32_tac[i] );
+                        // uint32_t
+                        //  std::string s = std::to_string(piphdr-stringstream strs;
+                        // strs << piphdr->saddr;
+                        // string temp_str = strs.str();
+                        // const char* pchar = temp_str.c_str();>saddr);
+                        //             char const *pchar = s.c_str();  //use char const* as target type
+                        
+                        // if (!strncmp(port2mac[i], (const char*) pehdr->ether_dhost, 6)) {
+                        
+                        //if (t == pehdr->ether_dhost) {
+                            // cout << "identical" << endl;
+                            // cout << port2mac[i] << endl << (const char*) pehdr->ether_dhost << endl;
                         // } else {
-                            dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmp));
-                            icmphdr_reply->type = htons(8);
-                            icmphdr_reply->code = icmphdr->code;
-                            icmphdr_reply->checksum = icmphdr->checksum;
-                            icmphdr_reply->id = icmphdr->id;
-                            icmphdr_reply->sequence = icmphdr->sequence;
-                        // }
+                        {
+                            map<char*, int>::iterator itr;
 
-                        //char data[dataSize];
-						/*
-                        for (int k = bytes_n - dataSize; k < bytes_n; k++) {
-                            data[k-bytes_n] = buf[k];
+                            // Display the first element in m.
+                            itr = name2port.begin();
+                            char* t = itr->first;
+                            char fileName[13] = "  -table.txt";
+                            fileName[0] = t[0];
+                            fileName[1] = t[1];
+                            cout << fileName << endl;
+                            
+                            //open file
+                            FILE *file_pointer; 
+                            file_pointer = fopen(fileName, "r"); 
+
+                            char network[200];
+                            char ipaddress[200];
+                            char interface[200];
+                            
+                            // fscanf(file_pointer, "%s.%s.%s.%s/%s %s %s\n", blah);                            
+                            fscanf(file_pointer, "%s %s %s",
+                            network,
+                            ipaddress,
+                            interface
+                            );
+                            cout << network << " " << ipaddress << " " << interface << endl;
+
+                            int* net = new int(5);
+                            int index = 0;
+                            int counter = 0;
+                            int trailing = 0;
+                            char temp[4];
+                            while (index < 6) {
+                                if (network[counter] == '.' || network[counter] == '/'  ) {
+                                    for (int k = trailing; k < counter; k++) {
+                                        temp[k-trailing] = network[k];                                        
+                                    }
+                                    temp[counter-trailing] = '\0';
+                                    cout << temp << endl;
+
+
+                                    counter++;
+                                    trailing = counter;
+
+                                    net[index]= (char) atoi(temp);
+                                    //net[inuint32_t] =  atoi("255");
+                                    //cout <uint32_ttoi("255");
+                                    index++;
+                                } else {
+                                    counter++;
+                                }
+
+                            }
+                            //net[5] = '\0';
+                            //net[0] = 255;
+                            cout << "net: " << net[0] << endl;
+                            cout << "net: " << net[1] << endl;
+                            cout << "net: " << net[2] << endl;
+                            cout << "net: " << net[3] << endl;
+                            cout << "net: " << net[4] << endl;
+
+                            //compare network to piphdr->daddr
+                            uint32_t tt = 0;
+                            int prefix = net[4]/8;
+                            for (int k = 0; k < prefix; k++) tt += net[k] * pow(256, 3-k);
+
+                            long val = (long) (((int) piphdr->daddr / pow(256,4-prefix)) * pow(256,4-prefix));
+                            cout << "dest val: " << val << endl;
+                            cout << "file network val: " << tt << endl;
+                            fclose(file_pointer);
+
+
+                            // cout << "char*: " << pchar << endl << "uint32: " << pehdr->ether_dhost << endl <<
+                            // "port2mac at " << i << ": " << port2mac[i] << endl << 
+                            // "port2mac int at " << i << ": " << t << endl;
                         }
-						*/
-                        //memcpy(data, buf + [bytes_n - dataSize], dataSize);
-                        memcpy(packet + (ETHER_HDR_LEN+sizeof(struct iphdr)) + sizeof(struct ouricmp), buf + bytes_n - dataSize, dataSize);
 
-                        //ethernet header
-                        ehdr_reply->ether_type = pehdr->ether_type;
-                        memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
-                        memcpy(ehdr_reply->ether_shost, pehdr->ether_dhost, ETH_ALEN);
-                        //ip header                        
-// #if __BYTE_ORDER == __LITTLE_ENDIAN
-//     unsigned int ihl:4;
-//     unsigned int version:4;
-// #elif __BYTE_ORDER == __BIG_ENDIAN
-//     unsigned int version:4;
-//     unsigned int ihl:4;
-// #else
-// # error	"Please fix <bits/endian.h>"
-// #endif
-//     uint8_t tos;
-//     uint16_t tot_len;
-//     uint16_t id;
-//     uint16_t frag_off;
-//     uint8_t ttl;
-//     uint8_t protocol;
-//     uint16_t check;
-//     uint32_t saddr;
-//     uint32_t daddr;
-                        iphdr_reply->ihl = piphdr->ihl;
-                        iphdr_reply->version = piphdr->version;
-                        iphdr_reply->tos = piphdr->tos;
-                        iphdr_reply->tot_len = piphdr->tot_len;
-                        iphdr_reply->id = piphdr->id;
-                        iphdr_reply->frag_off = piphdr->frag_off;
-                        iphdr_reply->ttl = piphdr->ttl;
-                        iphdr_reply->protocol = piphdr->protocol;
-                        iphdr_reply->check = piphdr->check;
-                        iphdr_reply->saddr = piphdr->daddr;
-                        iphdr_reply->daddr = piphdr->saddr;
-                        //icmp header
-    // u_int8_t type;
-    // u_int8_t code;
-    // u_int16_t checksum;
-    // u_int16_t id;
-    // u_int16_t sequence;
-                       send(i, packet, bytes_n, 0);
-                       }
+                        if (1 == 0) {
 
+                            icmphdr = (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                            tsicmphdr = (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                            // Check for ICMP here (within)
+                            // cout << "ICMP packet found" << endl;
+                            // Create packet to send back: TODO
+                            uint8_t packet[bytes_n];
+                            struct ether_header* ehdr_reply = (struct ether_header*) packet;
+                            //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+                            struct iphdr* iphdr_reply = (struct iphdr*) (packet+ETHER_HDR_LEN);
+                            struct ouricmp* icmphdr_reply = (struct ouricmp*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+                            struct ouricmpts* tsicmphdr_reply = (struct ouricmpts*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+
+                            // int timestamp = 0;
+                            int dataSize;
+                            // if (icmphdr->type == 8) {
+                            //     printf("timestamp\n");
+                            //     // timestamp = 8;
+                            //     dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmpts));
+                            //     tsicmphdr_reply->type = tsicmphdr->type;
+                            //     tsicmphdr_reply->code = tsicmphdr->code;
+                            //     tsicmphdr_reply->checksum = tsicmphdr->checksum;
+                            //     tsicmphdr_reply->id = tsicmphdr->id;
+                            //     tsicmphdr_reply->sequence = tsicmphdr->sequence;
+                            //     tsicmphdr_reply->timestamp = tsicmphdr->timestamp;
+                            // } else {
+                                dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmp));
+                                icmphdr_reply->type = htons(8);
+                                icmphdr_reply->code = icmphdr->code;
+                                icmphdr_reply->checksum = icmphdr->checksum;
+                                icmphdr_reply->id = icmphdr->id;
+                                icmphdr_reply->sequence = icmphdr->sequence;
+                            // }
+
+                            //char data[dataSize];
+                            /*
+                            for (int k = bytes_n - dataSize; k < bytes_n; k++) {
+                                data[k-bytes_n] = buf[k];
+                            }
+                            */
+                            //memcpy(data, buf + [bytes_n - dataSize], dataSize);
+                            memcpy(packet + (ETHER_HDR_LEN+sizeof(struct iphdr)) + sizeof(struct ouricmp), buf + bytes_n - dataSize, dataSize);
+
+                            //ethernet header
+                            ehdr_reply->ether_type = pehdr->ether_type;
+                            memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+                            memcpy(ehdr_reply->ether_shost, pehdr->ether_dhost, ETH_ALEN);
+                            //ip header                        
+    // #if __BYTE_ORDER == __LITTLE_ENDIAN
+    //     unsigned int ihl:4;
+    //     unsigned int version:4;
+    // #elif __BYTE_ORDER == __BIG_ENDIAN
+    //     unsigned int version:4;
+    //     unsigned int ihl:4;
+    // #else
+    // # error	"Please fix <bits/endian.h>"
+    // #endif
+    //     uint8_t tos;
+    //     uint16_t tot_len;
+    //     uint16_t id;
+    //     uint16_t frag_off;
+    //     uint8_t ttl;
+    //     uint8_t protocol;
+    //     uint16_t check;
+    //     uint32_t saddr;
+    //     uint32_t daddr;
+                            iphdr_reply->ihl = piphdr->ihl;
+                            iphdr_reply->version = piphdr->version;
+                            iphdr_reply->tos = piphdr->tos;
+                            iphdr_reply->tot_len = piphdr->tot_len;
+                            iphdr_reply->id = piphdr->id;
+                            iphdr_reply->frag_off = piphdr->frag_off;
+                            iphdr_reply->ttl = piphdr->ttl;
+                            iphdr_reply->protocol = piphdr->protocol;
+                            iphdr_reply->check = piphdr->check;
+                            iphdr_reply->saddr = piphdr->daddr;
+                            iphdr_reply->daddr = piphdr->saddr;
+                            //icmp header
+        // u_int8_t type;
+        // u_int8_t code;
+        // u_int16_t checksum;
+        // u_int16_t id;
+        // u_int16_t sequence;
+                        send(i, packet, bytes_n, 0);
+                        }
+                        }
                        break;
 
                     case 0x0806:
