@@ -228,23 +228,24 @@ int main(int argc, char** argv) {
                     // only getting arp packets with ping r1/r2 (something wrong?)
                     switch (ntohs(pehdr->ether_type)) {  // endian conversion
                     case 0x0800:  // ICMP embedded within
-                        {
+                    {
                         cout << "IPv4 packet found" << endl;  
                         piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);
-        // FILE *fptr;
-        // fptr = fopen(fileName, "rb");
-        // if (fptr == NULL)
-        // {
-        //     printf("Cannot open file \n");
-        // data[0] = '\0';
-        //     exit(0);
-        // }
+                        printf("ip protocol: %x\n", piphdr->protocol);
+                        // FILE *fptr;
+                        // fptr = fopen(fileName, "rb");
+                        // if (fptr == NULL)
+                        // {
+                        //     printf("Cannot open file \n");
+                        // data[0] = '\0';
+                        //     exit(0);
+                        // }
                         // char* pchar = (char *) &(piphdr->saddr);
                         // for (int k = 0; k < 7; k++) cout << pchar[k];
 
                         uint32_t t = 0;
                         for (int k = 0; k < 7; k++) t += port2mac[i][k] * pow(256, k);
-                        char pchar[7] = "" ;
+                        char pchar[7] = "";
 
                         //itoa(piphdr->saddr,pchar,7);
                         // sprintf(pchar, "%d", piphdr->saddr);
@@ -274,7 +275,7 @@ int main(int argc, char** argv) {
                             char fileName[13] = "  -table.txt";
                             fileName[0] = t[0];
                             fileName[1] = t[1];
-                            cout << fileName << endl;
+                            cout << "filename: " << fileName << endl;
                             
                             //open file
                             FILE *file_pointer; 
@@ -284,6 +285,7 @@ int main(int argc, char** argv) {
                             char ipaddress[200];
                             char interface[200];
                             
+                            // Read the first row of the table.
                             // fscanf(file_pointer, "%s.%s.%s.%s/%s %s %s\n", blah);                            
                             fscanf(file_pointer, "%s %s %s",
                             network,
@@ -292,6 +294,7 @@ int main(int argc, char** argv) {
                             );
                             cout << network << " " << ipaddress << " " << interface << endl;
 
+                            // Parse the table.
                             int* net = new int(5);
                             int index = 0;
                             int counter = 0;
@@ -341,10 +344,10 @@ int main(int argc, char** argv) {
                             // "port2mac at " << i << ": " << port2mac[i] << endl << 
                             // "port2mac int at " << i << ": " << t << endl;
                         }
-
-                        if (1 == 0) {
-
-                            icmphdr = (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                        if (piphdr->protocol == 0x01) {  // if icmp request
+                            cout << "ICMP request made" << endl;
+                            icmphdr = 
+                                (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
                             tsicmphdr = (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
                             // Check for ICMP here (within)
                             // cout << "ICMP packet found" << endl;
@@ -352,9 +355,12 @@ int main(int argc, char** argv) {
                             uint8_t packet[bytes_n];
                             struct ether_header* ehdr_reply = (struct ether_header*) packet;
                             //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
-                            struct iphdr* iphdr_reply = (struct iphdr*) (packet+ETHER_HDR_LEN);
-                            struct ouricmp* icmphdr_reply = (struct ouricmp*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
-                            struct ouricmpts* tsicmphdr_reply = (struct ouricmpts*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+                            struct iphdr* iphdr_reply = 
+                                (struct iphdr*) (packet+ETHER_HDR_LEN);
+                            struct ouricmp* icmphdr_reply = 
+                                (struct ouricmp*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
+                            struct ouricmpts* tsicmphdr_reply = 
+                                (struct ouricmpts*) (packet+ETHER_HDR_LEN+sizeof(struct iphdr));
 
                             // int timestamp = 0;
                             int dataSize;
@@ -369,12 +375,14 @@ int main(int argc, char** argv) {
                             //     tsicmphdr_reply->sequence = tsicmphdr->sequence;
                             //     tsicmphdr_reply->timestamp = tsicmphdr->timestamp;
                             // } else {
-                                dataSize = bytes_n - (ETHER_HDR_LEN + sizeof(struct iphdr) + sizeof(struct ouricmp));
-                                icmphdr_reply->type = htons(8);
-                                icmphdr_reply->code = icmphdr->code;
-                                icmphdr_reply->checksum = icmphdr->checksum;
-                                icmphdr_reply->id = icmphdr->id;
-                                icmphdr_reply->sequence = icmphdr->sequence;
+                            dataSize = bytes_n - 
+                                (ETHER_HDR_LEN + 
+                                sizeof(struct iphdr) + sizeof(struct ouricmp));
+                            icmphdr_reply->type = htons(8);
+                            icmphdr_reply->code = icmphdr->code;
+                            icmphdr_reply->checksum = icmphdr->checksum;
+                            icmphdr_reply->id = icmphdr->id;
+                            icmphdr_reply->sequence = icmphdr->sequence;
                             // }
 
                             //char data[dataSize];
@@ -384,31 +392,35 @@ int main(int argc, char** argv) {
                             }
                             */
                             //memcpy(data, buf + [bytes_n - dataSize], dataSize);
-                            memcpy(packet + (ETHER_HDR_LEN+sizeof(struct iphdr)) + sizeof(struct ouricmp), buf + bytes_n - dataSize, dataSize);
+                            memcpy(packet + 
+                                (ETHER_HDR_LEN+sizeof(struct iphdr)) + 
+                                sizeof(struct ouricmp), 
+                                buf + bytes_n - dataSize, 
+                                dataSize);
 
                             //ethernet header
                             ehdr_reply->ether_type = pehdr->ether_type;
                             memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
                             memcpy(ehdr_reply->ether_shost, pehdr->ether_dhost, ETH_ALEN);
                             //ip header                        
-    // #if __BYTE_ORDER == __LITTLE_ENDIAN
-    //     unsigned int ihl:4;
-    //     unsigned int version:4;
-    // #elif __BYTE_ORDER == __BIG_ENDIAN
-    //     unsigned int version:4;
-    //     unsigned int ihl:4;
-    // #else
-    // # error	"Please fix <bits/endian.h>"
-    // #endif
-    //     uint8_t tos;
-    //     uint16_t tot_len;
-    //     uint16_t id;
-    //     uint16_t frag_off;
-    //     uint8_t ttl;
-    //     uint8_t protocol;
-    //     uint16_t check;
-    //     uint32_t saddr;
-    //     uint32_t daddr;
+                            // #if __BYTE_ORDER == __LITTLE_ENDIAN
+                            //     unsigned int ihl:4;
+                            //     unsigned int version:4;
+                            // #elif __BYTE_ORDER == __BIG_ENDIAN
+                            //     unsigned int version:4;
+                            //     unsigned int ihl:4;
+                            // #else
+                            // # error	"Please fix <bits/endian.h>"
+                            // #endif
+                            //     uint8_t tos;
+                            //     uint16_t tot_len;
+                            //     uint16_t id;
+                            //     uint16_t frag_off;
+                            //     uint8_t ttl;
+                            //     uint8_t protocol;
+                            //     uint16_t check;
+                            //     uint32_t saddr;
+                            //     uint32_t daddr;
                             iphdr_reply->ihl = piphdr->ihl;
                             iphdr_reply->version = piphdr->version;
                             iphdr_reply->tos = piphdr->tos;
@@ -426,12 +438,12 @@ int main(int argc, char** argv) {
         // u_int16_t checksum;
         // u_int16_t id;
         // u_int16_t sequence;
-                        send(i, packet, bytes_n, 0);
+                            send(i, packet, bytes_n, 0);
                         }
                         }
-                       break;
+                        break;
 
-                    case 0x0806:
+                    case 0x0806:  // ARP
                         cout << "ARP packet found" << endl;
                         // Retrieve arp header: 
                         peahdr = (struct ether_arp*) (buf + ETHER_HDR_LEN);
@@ -512,7 +524,7 @@ int main(int argc, char** argv) {
 	// uint8_t arp_spa[4];		/* sender protocol address */
 	// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
 	// uint8_t arp_tpa[4];		/* target protocol address */
-                            uint8_t fakeMac[6] = {1,1,1,1,1,1};
+                            // uint8_t fakeMac[6] = {1,1,1,1,1,1};
 							char* t = port2mac[i];
                             uint8_t macAddress[6] = {
 									(uint8_t) t[0],
