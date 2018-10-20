@@ -52,119 +52,178 @@ struct ouricmpts {  // 128 bytes
 };
 
 int main(int argc, char** argv) {
-  int packet_socket;
-  fd_set sockets;  // everything interact with gets a fd, starts an empty set?
-  FD_ZERO(&sockets);
+    int packet_socket;
+    fd_set sockets;  // everything interact with gets a fd, starts an empty set?
+    FD_ZERO(&sockets);
 
-  //map() port number=mac
-	//interface name = port number
-	map <int, char*>  port2mac;
-	// map <int, uint32_t>  port2mac;
-	map <char*, int>  name2port;
-    map <char*, char*> name2ip; // for router's own ip addresses
+    //map() port number=mac
+        //interface name = port number
+        map <int, char*>  port2mac;
+        // map <int, uint32_t>  port2mac;
+        map <char*, int>  name2port;
+        map <char*, char*> name2ip; // for router's own ip addresses
 
-  //get list of interface addresses. This is a linked list. Next
-  //pointer is in ifa_next, interface name is in ifa_name, address is
-  //in ifa_addr. You will have multiple entries in the list with the
-  //same name, if the same interface has multiple addresses. This is
-  //common since most interfaces will have a MAC, IPv4, and IPv6
-  //address. You can use the names to match up which IPv4 address goes
-  //with which MAC address.
-  struct ifaddrs *ifaddr, *tmp;
-  if(getifaddrs(&ifaddr) == -1){
-    perror("getifaddrs");
-    return 1;
-  }
-  
-  //have the list, loop over the list
-  for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-    //Check if this is a packet address, there will be one per
-    //interface.  There are IPv4 and IPv6 as well, but we don't care
-    //about those for the purpose of enumerating interfaces. We can
-    //use the AF_INET addresses in this list for example to get a list
-    //of our own IP addresses
-    if(tmp->ifa_addr->sa_family == AF_PACKET) {
-      printf("Interface: %s\n",tmp->ifa_name);
-      //create a packet socket on interface r?-eth1
-      // eth0 to eth3 on table: allow any of these interfaces
-      if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)  ||
-         !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
-         !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
-         !strncmp(&(tmp->ifa_name[3]),"eth3",4) ) {  
-        // Get MAC addr
-        // ifa_addr is "network addr" = mac?
-		//for (int k = 0; k < 14; k++) {
-
-			char* mac = new char[6];
-			for (int k = 10; k <= 15; k++) {
-				mac[k-10] = tmp->ifa_addr->sa_data[k];
-			}
-			/*
-			printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-			(unsigned char) tmp->ifa_addr->sa_data[10],
-			(unsigned char) tmp->ifa_addr->sa_data[11],
-			(unsigned char) tmp->ifa_addr->sa_data[12],
-			(unsigned char) tmp->ifa_addr->sa_data[13],
-			(unsigned char) tmp->ifa_addr->sa_data[14],
-			(unsigned char) tmp->ifa_addr->sa_data[15]
-			);*/
-			printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-			(unsigned char) mac[0],
-			(unsigned char) mac[1],
-			(unsigned char) mac[2],
-			(unsigned char) mac[3],
-			(unsigned char) mac[4],
-			(unsigned char) mac[5]
-			);
-			//printf("%x", tmp->ifa_addr->sa_data[k]);
-			//if (k % 2 == 0 && k > 0) cout << ":";
-			//printf("%i", tmp->ifa_addr->sa_data[k]);
-        	//cout << tmp->ifa_addr->sa_data[k];
-		//}
-		//cout << endl;
-
-        printf("Creating Socket on interface %s\n",tmp->ifa_name);
-        //create a packet socket
-        //AF_PACKET makes it a packet socket
-        //SOCK_RAW makes it so we get the entire packet
-        //could also use SOCK_DGRAM to cut off link layer header
-        //ETH_P_ALL indicates we want all (upper layer) protocols
-        //we could specify just a specific one
-        packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-
-		port2mac.insert(pair<int, char*>(packet_socket, mac));
-
-        //update name2port
-        char* t = new char(8);
-        strcpy(t, tmp->ifa_name);
-        name2port.insert(pair<char*, int>(t, packet_socket));
-        //if(!strncmp(tmp->ifa_name,"r1-eth0",7) ) {
-            cout << "name2port key: " << t << " value: " << packet_socket << endl;
-        //}
-
-        if(packet_socket<0) {
-          perror("socket");
-          return 2;
-        }
-        //Bind the socket to the address, so we only get packets
-        //recieved on this specific interface. For packet sockets, the
-        //address structure is a struct sockaddr_ll (see the man page
-        //for "packet"), but of course bind takes a struct sockaddr.
-        //Here, we can use the sockaddr we got from getifaddrs (which
-        //we could convert to sockaddr_ll if we needed to)
-        if(bind(packet_socket, tmp->ifa_addr, 
-          sizeof(struct sockaddr_ll)) == -1) {
-          perror("bind");
-        }
-
-        // listen to connections from clients, give a backlog number of up to 
-	    // 10 clients to accept at once, rejects all further clients
-        listen(packet_socket, 10);  // needed? TODO
-        // adds the fd to the set pointed to (can do with any fd)
-        FD_SET(packet_socket, &sockets); 
-      }
+    //get list of interface addresses. This is a linked list. Next
+    //pointer is in ifa_next, interface name is in ifa_name, address is
+    //in ifa_addr. You will have multiple entries in the list with the
+    //same name, if the same interface has multiple addresses. This is
+    //common since most interfaces will have a MAC, IPv4, and IPv6
+    //address. You can use the names to match up which IPv4 address goes
+    //with which MAC address.
+    struct ifaddrs *ifaddr, *tmp;
+    if(getifaddrs(&ifaddr) == -1){
+        perror("getifaddrs");
+        return 1;
     }
-  }
+    
+    //have the list, loop over the list
+    for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
+        //Check if this is a packet address, there will be one per
+        //interface.  There are IPv4 and IPv6 as well, but we don't care
+        //about those for the purpose of enumerating interfaces. We can
+        //use the AF_INET addresses in this list for example to get a list
+        //of our own IP addresses
+        if(tmp->ifa_addr->sa_family == AF_PACKET) {
+        printf("Interface: %s\n",tmp->ifa_name);
+        //create a packet socket on interface r?-eth1
+        // eth0 to eth3 on table: allow any of these interfaces
+        if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)  ||
+            !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
+            !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
+            !strncmp(&(tmp->ifa_name[3]),"eth3",4) ) {  
+            // Get MAC addr
+            // ifa_addr is "network addr" = mac?
+            //for (int k = 0; k < 14; k++) {
+
+                char* mac = new char[6];
+                for (int k = 10; k <= 15; k++) {
+                    mac[k-10] = tmp->ifa_addr->sa_data[k];
+                }
+                /*
+                printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+                (unsigned char) tmp->ifa_addr->sa_data[10],
+                (unsigned char) tmp->ifa_addr->sa_data[11],
+                (unsigned char) tmp->ifa_addr->sa_data[12],
+                (unsigned char) tmp->ifa_addr->sa_data[13],
+                (unsigned char) tmp->ifa_addr->sa_data[14],
+                (unsigned char) tmp->ifa_addr->sa_data[15]
+                );*/
+                printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+                (unsigned char) mac[0],
+                (unsigned char) mac[1],
+                (unsigned char) mac[2],
+                (unsigned char) mac[3],
+                (unsigned char) mac[4],
+                (unsigned char) mac[5]
+                );
+                //printf("%x", tmp->ifa_addr->sa_data[k]);
+                //if (k % 2 == 0 && k > 0) cout << ":";
+                //printf("%i", tmp->ifa_addr->sa_data[k]);
+                //cout << tmp->ifa_addr->sa_data[k];
+            //}
+            //cout << endl;
+
+            printf("Creating Socket on interface %s\n",tmp->ifa_name);
+            //create a packet socket
+            //AF_PACKET makes it a packet socket
+            //SOCK_RAW makes it so we get the entire packet
+            //could also use SOCK_DGRAM to cut off link layer header
+            //ETH_P_ALL indicates we want all (upper layer) protocols
+            //we could specify just a specific one
+            packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+
+            port2mac.insert(pair<int, char*>(packet_socket, mac));
+
+            //update name2port
+            char* t = new char(8);
+            strcpy(t, tmp->ifa_name);
+            name2port.insert(pair<char*, int>(t, packet_socket));
+            //if(!strncmp(tmp->ifa_name,"r1-eth0",7) ) {
+                cout << "name2port key: " << t << " value: " << packet_socket << endl;
+            //}
+
+            if(packet_socket<0) {
+            perror("socket");
+            return 2;
+            }
+            //Bind the socket to the address, so we only get packets
+            //recieved on this specific interface. For packet sockets, the
+            //address structure is a struct sockaddr_ll (see the man page
+            //for "packet"), but of course bind takes a struct sockaddr.
+            //Here, we can use the sockaddr we got from getifaddrs (which
+            //we could convert to sockaddr_ll if we needed to)
+            if(bind(packet_socket, tmp->ifa_addr, 
+               sizeof(struct sockaddr_ll)) == -1) {
+                perror("bind");
+            }
+
+            // listen to connections from clients, give a backlog number of up to 
+            // 10 clients to accept at once, rejects all further clients
+            listen(packet_socket, 10);  // needed? TODO
+            // adds the fd to the set pointed to (can do with any fd)
+            FD_SET(packet_socket, &sockets); 
+        }
+        }
+    }
+
+    // Parse router table information:
+    map<char*, int>::iterator itr;
+    // Display the first element in m.
+    itr = name2port.begin();
+    char* t = itr->first;
+    char fileName[13] = "  -table.txt";
+    fileName[0] = t[0];
+    fileName[1] = t[1];
+    cout << "filename: " << fileName << endl;
+    // Create 3 maps for getting table values from network bits. 
+    map <char*, char*> net2hop;  // hop addr, "-" value if none
+    map <char*, char*> net2if;   // interface
+    map <char*, uint8_t> net2hostlength;   // host bits
+    // TODO might just store an array of length and compare all those
+    // lengths to find a match
+    // Parse table and store mapping.
+    // open file
+    FILE *file_pointer; 
+    file_pointer = fopen(fileName, "r");
+    // Read table into string (works up to 4 GB)
+    char* buffer = 0;
+    long length;
+    if (file_pointer)
+    {
+        fseek(file_pointer, 0, SEEK_END);
+        length = ftell(file_pointer);
+        fseek(file_pointer, 0, SEEK_SET);
+        buffer = (char*)malloc(length + 1);  // must cast return in c++
+        if(buffer)
+        {
+            fread(buffer, 1, length, file_pointer);
+        }
+        fclose(file_pointer);
+        buffer[length]='\0';
+    }
+    char data[length+1];  // to allow strtok to modify string
+    for(int z=0; z<length+1; z++) data[z] = buffer[z];
+    free(buffer);
+    // Now parse the string of table
+    char* token = strtok(data, " /\n\0");
+    while(token != NULL) // loop works for specific table format only
+    { 
+        //if(!token) break;
+        printf("%s ", token); 
+        token = strtok(NULL, " /\n\0");
+        //if(!token) break;
+        printf("%s ", token); 
+        token = strtok(NULL, " /\n\0");
+        //if(!token) break;
+        printf("%s ", token); 
+        token = strtok(NULL, " /\n\0"); 
+        //if(!token) break;
+        printf("%s\n", token); 
+        token = strtok(NULL, " /\n\0"); 
+    } 
+    cout << "table parsed" << endl;
+    // TODO convert prints of table above to saving within maps?
+    // then use the maps for the rest of part 2
 
 	map<int, char*>::iterator p;
 	//p = port2mac.begin();
@@ -231,7 +290,7 @@ int main(int argc, char** argv) {
                     {
                         cout << "IPv4 packet found" << endl;  
                         piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);
-                        printf("ip protocol: %x\n", piphdr->protocol);
+                        printf("ip protocol: 0x%x\n", piphdr->protocol);
                         // FILE *fptr;
                         // fptr = fopen(fileName, "rb");
                         // if (fptr == NULL)
@@ -267,77 +326,65 @@ int main(int argc, char** argv) {
                             // cout << port2mac[i] << endl << (const char*) pehdr->ether_dhost << endl;
                         // } else {
                         {
-                            map<char*, int>::iterator itr;
-
-                            // Display the first element in m.
-                            itr = name2port.begin();
-                            char* t = itr->first;
-                            char fileName[13] = "  -table.txt";
-                            fileName[0] = t[0];
-                            fileName[1] = t[1];
-                            cout << "filename: " << fileName << endl;
                             
-                            //open file
-                            FILE *file_pointer; 
-                            file_pointer = fopen(fileName, "r"); 
 
-                            char network[200];
-                            char ipaddress[200];
-                            char interface[200];
+                            // char network[200];
+                            // char ipaddress[200];
+                            // char interface[200];
                             
-                            // Read the first row of the table.
-                            // fscanf(file_pointer, "%s.%s.%s.%s/%s %s %s\n", blah);                            
-                            fscanf(file_pointer, "%s %s %s",
-                            network,
-                            ipaddress,
-                            interface
-                            );
-                            cout << network << " " << ipaddress << " " << interface << endl;
+                            // // Read the first row of the table.
+                            // // fscanf(file_pointer, "%s.%s.%s.%s/%s %s %s\n", blah);                            
+                            // fscanf(file_pointer, "%s %s %s",
+                            // network,
+                            // ipaddress,
+                            // interface
+                            // );
+                            // cout << network << " " << ipaddress << " " << interface << endl;
 
-                            // Parse the table.
-                            int* net = new int(5);
-                            int index = 0;
-                            int counter = 0;
-                            int trailing = 0;
-                            char temp[4];
-                            while (index < 6) {
-                                if (network[counter] == '.' || network[counter] == '/'  ) {
-                                    for (int k = trailing; k < counter; k++) {
-                                        temp[k-trailing] = network[k];                                        
-                                    }
-                                    temp[counter-trailing] = '\0';
-                                    cout << temp << endl;
+                            // // Parse the table.
+                            // int* net = new int(5);
+                            // int index = 0;
+                            // int counter = 0;
+                            // int trailing = 0;
+                            // char temp[4];
+                            // while (index < 6) {
+                            //     if (network[counter] == '.' || network[counter] == '/'  ) {
+                            //         for (int k = trailing; k < counter; k++) {
+                            //             temp[k-trailing] = network[k];                                        
+                            //         }
+                            //         temp[counter-trailing] = '\0';
+                            //         cout << temp << endl;
 
 
-                                    counter++;
-                                    trailing = counter;
+                            //         counter++;
+                            //         trailing = counter;
 
-                                    net[index]= (char) atoi(temp);
-                                    //net[inuint32_t] =  atoi("255");
-                                    //cout <uint32_ttoi("255");
-                                    index++;
-                                } else {
-                                    counter++;
-                                }
+                            //         net[index]= (char) atoi(temp);
+                            //         //net[inuint32_t] =  atoi("255");
+                            //         //cout <uint32_ttoi("255");
+                            //         index++;
+                            //     } else {
+                            //         counter++;
+                            //     }
 
-                            }
-                            //net[5] = '\0';
-                            //net[0] = 255;
-                            cout << "net: " << net[0] << endl;
-                            cout << "net: " << net[1] << endl;
-                            cout << "net: " << net[2] << endl;
-                            cout << "net: " << net[3] << endl;
-                            cout << "net: " << net[4] << endl;
+                            // }
+                            // //net[5] = '\0';
+                            // //net[0] = 255;
+                            // cout << "net: " << net[0] << endl;
+                            // cout << "net: " << net[1] << endl;
+                            // cout << "net: " << net[2] << endl;
+                            // cout << "net: " << net[3] << endl;
+                            // cout << "net: " << net[4] << endl;
 
-                            //compare network to piphdr->daddr
-                            uint32_t tt = 0;
-                            int prefix = net[4]/8;
-                            for (int k = 0; k < prefix; k++) tt += net[k] * pow(256, 3-k);
+                            // //compare network to piphdr->daddr
+                            // uint32_t tt = 0;
+                            // int prefix = net[4]/8;
+                            // for (int k = 0; k < prefix; k++) tt += net[k] * pow(256, 3-k);
 
-                            long val = (long) (((int) piphdr->daddr / pow(256,4-prefix)) * pow(256,4-prefix));
-                            cout << "dest val: " << val << endl;
-                            cout << "file network val: " << tt << endl;
-                            fclose(file_pointer);
+                            // long val = (long) (((int) piphdr->daddr / pow(256,4-prefix)) * pow(256,4-prefix));
+                            // cout << "dest val: " << val << endl;
+                            // cout << "file network val: " << tt << endl;
+                            
 
 
                             // cout << "char*: " << pchar << endl << "uint32: " << pehdr->ether_dhost << endl <<
@@ -568,8 +615,9 @@ int main(int argc, char** argv) {
     //need to be in the buffer you are sending)
   }
 
-  //free the interface list when we don't need it anymore
-  freeifaddrs(ifaddr);
-  //exit
-  return 0;
+    free(buffer);
+    //free the interface list when we don't need it anymore
+    freeifaddrs(ifaddr);
+    //exit
+    return 0;
 }
