@@ -1,11 +1,16 @@
 /**
  * Project 2: Virtual Router
  * Owen Dunn and Reuben Wattenhofer
+ * 10/29/18
+ * CIS 457
+ * 
  * A virtual network with five hosts and two routers is first created. 
  * This code is then run from both routers.
  * Part 1: ARP and ICMP protocols
+ * Part 2: Packet forwarding
+ * Part 3:
  * 
- * compile: g++ -std=c++0x route.cpp -o r (from outside of mininet, then send r)
+ * compile: g++ route.cpp -o r (from outside of mininet, then send r)
  * -having trouble installing c++ compilers on mininet
  */
 
@@ -31,9 +36,9 @@
 #include <string.h>
 #include <vector>  // not sure if works on system
 //#include <sstream> // for int to char* conversions (stringstream)
-//#include<stdlib.h>
 #include <math.h> //for power
 #include <algorithm>  // std::find
+#include <iterator>
 
 using namespace std;
 
@@ -182,7 +187,7 @@ int main(int argc, char** argv) {
     map <uint32_t, uint32_t> net2hop;  // hop ip addr, "-" value if none
     map <uint32_t, char*> net2if;   // interface
     map <uint32_t, uint8_t> net2length;  // net bits
-    vector <uint8_t> lengths;  // all network lengths
+    //vector <uint8_t> lengths;  // all network lengths
     // TODO might just store an array of length and compare all those
     // lengths to find a match
     // Parse table and store mapping.
@@ -229,9 +234,9 @@ int main(int argc, char** argv) {
         b_netaddr = (uint32_t)ntohl(b_netaddr);  // host order
         token = strtok(NULL, " /\n\0");  // get net length
         bitLength = (uint8_t)atoi(token);
-        if(std::find(lengths.begin(), lengths.end(), bitLength) != lengths.end()) {
-            lengths.push_back(bitLength);
-        }
+        // if(std::find(lengths.begin(), lengths.end(), bitLength) != lengths.end()) {
+        //     lengths.push_back(bitLength);
+        // }
         printf("net addr: %#X ", b_netaddr);
         net2length[b_netaddr] = bitLength;
         printf("%d ", net2length[b_netaddr]); 
@@ -324,7 +329,7 @@ int main(int argc, char** argv) {
                 if (bytes_n > 0) {
                     pehdr = (struct ether_header *) buf; 
                     // only getting arp packets with ping r1/r2 (something wrong?)
-                    switch (ntohs(pehdr->ether_type)) {  // endian conversion
+                    switch (ntohs(pehdr->ether_type)) {  // endian conversion (16 bits)
                     case ETHERTYPE_IP:  
                     {
                         cout << "IPv4 packet found" << endl;  
@@ -424,13 +429,41 @@ int main(int argc, char** argv) {
                             // cout << "char*: " << pchar << endl << "uint32: " << pehdr->ether_dhost << endl <<
                             // "port2mac at " << i << ": " << port2mac[i] << endl << 
                             // "port2mac int at " << i << ": " << t << endl;
-                        switch (piphdr->protocol)
+                        switch (piphdr->protocol)  // part of IP
                         {
-                        case 0x06:  // TCP (all of part 2?)
+                        case 0x06:  // TCP (all of part 2 packet forwarding?)
                         {
-                            // Forward packet to dest
+                            cout << "TCP packet Received" << endl;
+                            // Forward packet to dest:
                             // Look up dest addr from table to get ip 
-                            // addr of next hop.
+                            // addr of next hop. Prefixes all 16 or 24 bits. 
+                            // Max of one match possible.
+                            uint32_t daddr = (uint32_t)ntohl(piphdr->daddr);  // 32 bits
+                            uint32_t hopaddr, hopaddrnet;
+                            std::map<uint32_t, uint32_t>::iterator it;
+                            printf("Dest ip addr: %#X\n", daddr);
+                            //struct in_addr struct_dest;
+                            //struct_dest.sin_addr.s_addr =  piphdr->daddr;
+                            printf("or %s\n", inet_ntoa(*(struct in_addr*)&(piphdr->daddr)));
+                            if ((it=net2hop.find(daddr & 0xffff0000)) != net2hop.end() ) {  // 16 bit netlength
+                                hopaddr = net2hop[daddr & 0xffff0000];
+                                cout << "Hop IP addr found in table." << endl;
+                                hopaddrnet = (uint32_t)htonl(hopaddr);
+                                printf("hop addr: %s", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+                            } else if ((it=net2hop.find(daddr & 0xffffff00)) != net2hop.end() ) {  // 24 bit netlength
+                                hopaddr = net2hop[daddr & 0xffffff00];
+                                cout << "Hop IP addr found in table." << endl;
+                                hopaddrnet = (uint32_t)htonl(hopaddr);
+                                printf("hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+                            } else {
+                                // TODO NO MATCH: PART 3 ACTION HERE
+                                cout << "No match found in table." << endl;
+                                break;
+                            }
+
+                            // TODO Use ARP to get dest MAC addr: (request hop addr for its MAC addr)
+                            if (hopaddr == 0) break;  // no hop for this network
+                            cout << "Using ARP to get MAC addr for hop" << endl;
 
 
                             break;
@@ -543,7 +576,7 @@ int main(int argc, char** argv) {
                         // Retrieve arp header: 
                         peahdr = (struct ether_arp*) (buf + ETHER_HDR_LEN);
                         // Check if request:
-                        cout << "op: " << ntohs(peahdr->arp_op) << endl;
+                        cout << "op: " << ntohs(peahdr->arp_op) << endl;  // 16-bits
                         if (ntohs(peahdr->arp_op) == 1) {
                             cout << "ARP request made" << endl;
                             // Create packet to send back: TODO
@@ -649,7 +682,7 @@ int main(int argc, char** argv) {
 
                     default:
                         cout << "Other packet type found: " <<  
-                        ntohs(pehdr->ether_type) << endl;    
+                        ntohs(pehdr->ether_type) << endl;  // 16 bits
                     }
                 }
                 

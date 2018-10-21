@@ -29,4 +29,10 @@ networksorcery.com: good info on icmp and more. has diagram hdrs
  -rfcs: standards for network protocols above link layer
  -ieee standards: used for link layer and below
  lang: not java, python, c, c++ (map data structure useful)
+
+nc: arbitrary tcp and udp connections and listens
+nc -l portnumber  (listen for incoming connection on port given)
+nc ipaddr port 
+end connection with eof   
+seems to send with ip protocol 6 or arp requests
  
