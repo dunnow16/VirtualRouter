@@ -19,6 +19,7 @@
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <ifaddrs.h>
@@ -28,10 +29,11 @@
 #include <iostream> 
 #include <map>
 #include <string.h>
-//#include <vector>
+#include <vector>  // not sure if works on system
 //#include <sstream> // for int to char* conversions (stringstream)
 //#include<stdlib.h>
 #include <math.h> //for power
+#include <algorithm>  // std::find
 
 using namespace std;
 
@@ -135,10 +137,10 @@ int main(int argc, char** argv) {
             port2mac.insert(pair<int, char*>(packet_socket, mac));
 
             //update name2port
-            char* t = new char(8);
+            char* t = new char[8];  // char(8) assigns 1 char value 8
             strcpy(t, tmp->ifa_name);
             name2port.insert(pair<char*, int>(t, packet_socket));
-            //if(!strncmp(tmp->ifa_name,"r1-eth0",7) ) {
+            //if(!strncmp(tmp->ifa_name,"r1-eth0",7 ) ) {
                 cout << "name2port key: " << t << " value: " << packet_socket << endl;
             //}
 
@@ -175,10 +177,12 @@ int main(int argc, char** argv) {
     fileName[0] = t[0];
     fileName[1] = t[1];
     cout << "filename: " << fileName << endl;
-    // Create 3 maps for getting table values from network bits. 
-    map <char*, char*> net2hop;  // hop addr, "-" value if none
-    map <char*, char*> net2if;   // interface
-    map <char*, uint8_t> net2hostlength;   // host bits
+    // Create 3 maps for getting table values from network bits (array form).
+    // net in binary host order, 32 bits
+    map <uint32_t, uint32_t> net2hop;  // hop ip addr, "-" value if none
+    map <uint32_t, char*> net2if;   // interface
+    map <uint32_t, uint8_t> net2length;  // net bits
+    vector <uint8_t> lengths;  // all network lengths
     // TODO might just store an array of length and compare all those
     // lengths to find a match
     // Parse table and store mapping.
@@ -205,25 +209,60 @@ int main(int argc, char** argv) {
     for(int z=0; z<length+1; z++) data[z] = buffer[z];
     free(buffer);
     // Now parse the string of table
+    char* netaddr = new char[16]; 
+    char* hopaddr = new char[16]; 
+    char* ifc = new char[8];  // interface
+    uint8_t bitLength;
+    uint32_t b_netaddr;  // binary net address in host order
+    uint32_t b_hopaddr;
+    char str[INET_ADDRSTRLEN];
+    cout << "parsing table" << endl;
     char* token = strtok(data, " /\n\0");
     while(token != NULL) // loop works for specific table format only
     { 
-        //if(!token) break;
+        strcpy(netaddr, token);
+        printf("%s ", netaddr); 
+        inet_pton(AF_INET, netaddr, &b_netaddr);  // string to net address
+        //inet_ntop(AF_INET, &b_netaddr, str, INET_ADDRSTRLEN);
+        //printf("made: %s ", str);
+        //printf("%d ", sizeof(unsigned short int));  // 2 bytes only
+        b_netaddr = (uint32_t)ntohl(b_netaddr);  // host order
+        token = strtok(NULL, " /\n\0");  // get net length
+        bitLength = (uint8_t)atoi(token);
+        if(std::find(lengths.begin(), lengths.end(), bitLength) != lengths.end()) {
+            lengths.push_back(bitLength);
+        }
+        printf("net addr: %#X ", b_netaddr);
+        net2length[b_netaddr] = bitLength;
+        printf("%d ", net2length[b_netaddr]); 
+        //printf("%d ", (uint8_t)atoi(token));
+        token = strtok(NULL, " /\n\0");  // hop addr
+        strcpy(hopaddr, token);
+        if (hopaddr[0] == '-'){
+            b_hopaddr = 0;
+        }else{
+            inet_pton(AF_INET, hopaddr, &b_hopaddr); 
+            b_hopaddr = (uint32_t)ntohl(b_hopaddr); 
+        }
+        net2hop[b_netaddr] = b_hopaddr;
         printf("%s ", token); 
-        token = strtok(NULL, " /\n\0");
-        //if(!token) break;
-        printf("%s ", token); 
-        token = strtok(NULL, " /\n\0");
-        //if(!token) break;
-        printf("%s ", token); 
-        token = strtok(NULL, " /\n\0"); 
-        //if(!token) break;
-        printf("%s\n", token); 
-        token = strtok(NULL, " /\n\0"); 
+        printf("hop addr: %#X ", b_hopaddr);
+        token = strtok(NULL, " /\n\0");  // interface
+        strcpy(ifc, token);
+        printf("%s\n", ifc);
+        net2if[b_netaddr] = ifc;
+        token = strtok(NULL, " /\n\0"); // get net addr (null after last row)
+        // allocate mem for next net and hop addr, interface
+        //netaddr = new char[16];  
+        //hopaddr = new char[16];
+        ifc = new char[8]; 
     } 
     cout << "table parsed" << endl;
-    // TODO convert prints of table above to saving within maps?
-    // then use the maps for the rest of part 2
+
+
+
+
+
 
 	map<int, char*>::iterator p;
 	//p = port2mac.begin();
@@ -286,11 +325,11 @@ int main(int argc, char** argv) {
                     pehdr = (struct ether_header *) buf; 
                     // only getting arp packets with ping r1/r2 (something wrong?)
                     switch (ntohs(pehdr->ether_type)) {  // endian conversion
-                    case 0x0800:  // ICMP embedded within
+                    case ETHERTYPE_IP:  
                     {
                         cout << "IPv4 packet found" << endl;  
                         piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);
-                        printf("ip protocol: 0x%x\n", piphdr->protocol);
+                        printf("ip protocol: %u\n", piphdr->protocol);
                         // FILE *fptr;
                         // fptr = fopen(fileName, "rb");
                         // if (fptr == NULL)
@@ -302,9 +341,9 @@ int main(int argc, char** argv) {
                         // char* pchar = (char *) &(piphdr->saddr);
                         // for (int k = 0; k < 7; k++) cout << pchar[k];
 
-                        uint32_t t = 0;
-                        for (int k = 0; k < 7; k++) t += port2mac[i][k] * pow(256, k);
-                        char pchar[7] = "";
+                        // uint32_t t = 0;
+                        // for (int k = 0; k < 7; k++) t += port2mac[i][k] * pow(256, k);
+                        // char pchar[7] = "";
 
                         //itoa(piphdr->saddr,pchar,7);
                         // sprintf(pchar, "%d", piphdr->saddr);
@@ -325,9 +364,6 @@ int main(int argc, char** argv) {
                             // cout << "identical" << endl;
                             // cout << port2mac[i] << endl << (const char*) pehdr->ether_dhost << endl;
                         // } else {
-                        {
-                            
-
                             // char network[200];
                             // char ipaddress[200];
                             // char interface[200];
@@ -385,13 +421,22 @@ int main(int argc, char** argv) {
                             // cout << "dest val: " << val << endl;
                             // cout << "file network val: " << tt << endl;
                             
-
-
                             // cout << "char*: " << pchar << endl << "uint32: " << pehdr->ether_dhost << endl <<
                             // "port2mac at " << i << ": " << port2mac[i] << endl << 
                             // "port2mac int at " << i << ": " << t << endl;
+                        switch (piphdr->protocol)
+                        {
+                        case 0x06:  // TCP (all of part 2?)
+                        {
+                            // Forward packet to dest
+                            // Look up dest addr from table to get ip 
+                            // addr of next hop.
+
+
+                            break;
                         }
-                        if (piphdr->protocol == 0x01) {  // if icmp request
+                        case 0x01:  // ICMP
+                        {  
                             cout << "ICMP request made" << endl;
                             icmphdr = 
                                 (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
@@ -480,17 +525,20 @@ int main(int argc, char** argv) {
                             iphdr_reply->saddr = piphdr->daddr;
                             iphdr_reply->daddr = piphdr->saddr;
                             //icmp header
-        // u_int8_t type;
-        // u_int8_t code;
-        // u_int16_t checksum;
-        // u_int16_t id;
-        // u_int16_t sequence;
+                            // u_int8_t type;
+                            // u_int8_t code;
+                            // u_int16_t checksum;
+                            // u_int16_t id;
+                            // u_int16_t sequence;
                             send(i, packet, bytes_n, 0);
+                            break;
                         }
                         }
                         break;
-
-                    case 0x0806:  // ARP
+                    } //endof ethertypeip
+                    
+                    case ETHERTYPE_ARP:  // ARP
+                    {
                         cout << "ARP packet found" << endl;
                         // Retrieve arp header: 
                         peahdr = (struct ether_arp*) (buf + ETHER_HDR_LEN);
@@ -587,16 +635,18 @@ int main(int argc, char** argv) {
                             memcpy(eahdr_reply->arp_tha, peahdr->arp_sha, ETH_ALEN);
                             memcpy(eahdr_reply->arp_tpa, peahdr->arp_spa, 4);
 
-// ether_dhost
-// ether_shost
+                            // ether_dhost
+                            // ether_shost
                             // sizeof(*packet)
-                            send(i, packet, sizeof(struct ether_header) + sizeof(struct ether_arp), 0);
+                            send(i, packet, sizeof(struct ether_header) + 
+                                sizeof(struct ether_arp), 0);
                         }
                         // cout << "sending packet\n";
                         // send(i, "asdfasdf", 9, 0);
 
                         break;
-                    
+                    }
+
                     default:
                         cout << "Other packet type found: " <<  
                         ntohs(pehdr->ether_type) << endl;    
@@ -614,7 +664,8 @@ int main(int argc, char** argv) {
     //is not necessary, since the headers, including all addresses,
     //need to be in the buffer you are sending)
   }
-
+    // TODO free key/value pairs from all maps
+    // delete [] netaddr  // free mem
     free(buffer);
     //free the interface list when we don't need it anymore
     freeifaddrs(ifaddr);
