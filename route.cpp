@@ -264,11 +264,6 @@ int main(int argc, char** argv) {
     } 
     cout << "table parsed" << endl;
 
-
-
-
-
-
 	map<int, char*>::iterator p;
 	//p = port2mac.begin();
 	//cout << p->second << endl;
@@ -281,7 +276,6 @@ int main(int argc, char** argv) {
 			(unsigned char) p->second[5]
 			);*/
   
-
   //loop and recieve packets. We are only looking at one interface,
   //for the project you will probably want to look at more (to do so,
   //a good way is to have one socket per interface and use select to
@@ -449,7 +443,7 @@ int main(int argc, char** argv) {
                                 hopaddr = net2hop[daddr & 0xffff0000];
                                 cout << "Hop IP addr found in table." << endl;
                                 hopaddrnet = (uint32_t)htonl(hopaddr);
-                                printf("hop addr: %s", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+                                printf("hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
                             } else if ((it=net2hop.find(daddr & 0xffffff00)) != net2hop.end() ) {  // 24 bit netlength
                                 hopaddr = net2hop[daddr & 0xffffff00];
                                 cout << "Hop IP addr found in table." << endl;
@@ -466,8 +460,12 @@ int main(int argc, char** argv) {
                             cout << "Using ARP to get MAC addr for hop" << endl;
 
 
+
+
+
                             break;
                         }
+
                         case 0x01:  // ICMP
                         {  
                             cout << "ICMP request made" << endl;
@@ -673,16 +671,24 @@ int main(int argc, char** argv) {
                             // sizeof(*packet)
                             send(i, packet, sizeof(struct ether_header) + 
                                 sizeof(struct ether_arp), 0);
-                        }
-                        // cout << "sending packet\n";
-                        // send(i, "asdfasdf", 9, 0);
+                        } else if (ntohs(peahdr->arp_op) == 2) {  // reply (16 bits)
+                            // TODO Parse MAC address and send packet with new ethernet header
+                            cout << "ARP reply received" << endl;
 
+
+
+
+
+                        } else {
+                            cout << "Other ARP packet type received (Opcode not 1 or 2)" 
+                                << endl;
+                        }
                         break;
                     }
 
                     default:
                         cout << "Other packet type found: " <<  
-                        ntohs(pehdr->ether_type) << endl;  // 16 bits
+                            ntohs(pehdr->ether_type) << endl;  // 16 bits
                     }
                 }
                 
