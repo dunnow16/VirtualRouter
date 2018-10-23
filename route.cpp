@@ -11,6 +11,7 @@
  * Part 3:
  * 
  * compile: g++ route.cpp -o r (from outside of mininet, then send r)
+ * compile: g++ -static-libstdc++ route.cpp -o r (from outside of mininet, then send r)
  * -having trouble installing c++ compilers on mininet
  */
 
@@ -61,7 +62,6 @@ struct ouricmpts {  // 128 bytes
 struct packetStorage {
     char* packet;
     int bytes;
-    uint32_t daddr;
 };
 
 int main(int argc, char** argv) {
@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
         // map <string, string>  name2ip;
         map <string, char*>  name2ip;
         // map <char*, char*> name2ip; // for router's own ip addresses
+        map <vector<uint8_t>, vector<packetStorage*>> packets; //dest ip addr = packet
 
     //get list of interface addresses. This is a linked list. Next
     //pointer is in ifa_next, interface name is in ifa_name, address is
@@ -106,11 +107,11 @@ int main(int argc, char** argv) {
 //         char    sa_data[14];
 // };
     //have the list, loop over the list
-    for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
-        printf("*\nInterface: %s\n",tmp->ifa_name);
-        printf("ifa_addr: %0x\n", tmp->ifa_addr->sa_data);
-        printf("ifa_netmask: %0x\n", tmp->ifa_netmask->sa_data);
-    }
+    // for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
+    //     printf("*\nInterface: %s\n",tmp->ifa_name);
+    //     printf("ifa_addr: %0x\n", tmp->ifa_addr->sa_data);
+    //     printf("ifa_netmask: %0x\n", tmp->ifa_netmask->sa_data);
+    // }
     for(tmp = ifaddr; tmp!=NULL; tmp=tmp->ifa_next) {
         //Check if this is a packet address, there will be one per
         //interface.  There are IPv4 and IPv6 as well, but we don't care
@@ -467,6 +468,7 @@ int main(int argc, char** argv) {
                         cout << "IPv4 packet found" << endl;  
                         piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);
                         printf("ip protocol: %u\n", piphdr->protocol);
+
                         // FILE *fptr;
                         // fptr = fopen(fileName, "rb");
                         // if (fptr == NULL)
@@ -565,6 +567,7 @@ int main(int argc, char** argv) {
                         {
                         case 0x06:  // TCP (all of part 2 packet forwarding?)
                         {
+
                             cout << "   TCP packet Received" << endl;
                             // Forward packet to dest:
                             // Look up dest addr from table to get ip 
@@ -732,6 +735,7 @@ int main(int argc, char** argv) {
                                 cout << "   Hop IP addr found in table." << endl;
                                 hopaddrnet = (uint32_t)htonl(hopaddr);
                                 printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+
                             } else if ((it=net2hop.find(daddr & 0xffff0000)) != net2hop.end() ) {  // 24 bit netlength
                                 hopaddr = net2hop[daddr & 0xffff0000];
                                 char* interface = net2if[daddr & 0xffff0000];
@@ -748,20 +752,86 @@ int main(int argc, char** argv) {
                                 cout << "   No match found in table." << endl;
                                 break;
                             }
+                            
+                            if (hopaddr == 0)  // no hop for this network
+							{
+                                hopaddr = piphdr->daddr;
+							} else {
+                                hopaddr = (uint32_t)htonl(hopaddr); //flip it
+                            }
+							
+
+                            //contruct hop address as an octet array x.x.x.x
+                            // char* str = inet_ntoa(*(struct in_addr*)&(piphdr->daddr));
+                            // uint32_t backwards = htons(hopaddr);
+                            char* str = inet_ntoa(*(struct in_addr*)&(hopaddr));
+
+                            char * pch;
+                            char* dipv4 = new char(4);
+                            int index = 0;
+                            // printf ("Splitting string \"%s\" into tokens:\n",str);
+                            pch = strtok (str,".");
+                            dipv4[index++] = atoi(pch);
+                            for (int k = 1; k < 4; k++) {
+                                // printf("%s\n",pch);
+                                pch = strtok (NULL, ".");
+                                dipv4[index++] = atoi(pch);
+                            }
+
+                            // Store packet for later forwarding
+                            struct packetStorage* pckt = new (struct packetStorage);
+    // struct packetStorage {
+    //     char* packet;
+    //     int bytes;
+    // };
+                            // pckt->packet = buf;
+                            pckt->packet = new char[bytes_n];
+                            // for (int k = 0; k < bytes_n; k++) {
+                                memcpy(pckt->packet, buf, bytes_n);
+                            // }
+                            pckt->bytes = bytes_n;
+                            vector<uint8_t> v;
+                            v.push_back(dipv4[0]);
+                            v.push_back(dipv4[1]);
+                            v.push_back(dipv4[2]);
+                            v.push_back(dipv4[3]);
+
+                            cout << "       dest network address: " ;//<< dipv4 <<endl;
+                             printf("%i.%i.%i.%i\n",(unsigned int)v[0],
+                                                     (unsigned int)v[1],
+                                                     (unsigned int)v[2],
+                                                     (unsigned int)v[3]);
+
+                            // packets[(uint8_t*) dipv4].push_back(pckt);
+                            packets[v].push_back(pckt);
+
+                            printf("        size of packets[v]: %i\n", packets[v].size());
+                            if (packets[v].size() > 0) {
+                                // printf("        packet: %0x\n", packets[v].back()->packet);
+                                // struct iphdr* a = (struct iphdr*) (packets[v].back()->packet+ETHER_HDR_LEN);
+                                // printf("        packet type: %i\n", a->protocol);
+                                // printf("        size of packets[v]: %i\n", packets[v].size());
+
+                                printf("        packet: %0x\n", packets[v].back()->packet);
+                                // struct iphdr* a = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
+                                struct ether_header* a = (struct ether_header*) (packets[v].back()->packet);
+                                // printf("        packet type: %0x\n", a->protocol);
+                                printf("        packet type: %0x\n", ntohs(a->ether_type));
+                                printf("        original packet type: %0x\n", ntohs(pehdr->ether_type));
+                                printf("        packet size: %i\n", packets[v].back()->bytes);
+                             }
+
                             printf("    router ip %i.%i.%i.%i\n",
                             (unsigned char) sipv4[0],
                             (unsigned char) sipv4[1],
                             (unsigned char) sipv4[2],
                             (unsigned char) sipv4[3]
                             );
+
                             // TODO Use ARP to get dest MAC addr: (request hop addr for its MAC addr)
 							
-                            if (hopaddr == 0)  // no hop for this network
-							{
+                            //add the packet to the map
 
-							} else {
-
-							}
                             cout << "       Using ARP to get MAC addr for hop" << endl;
                                 
     // map <uint32_t, uint32_t> net2hop;  // hop ip addr, "-" value if none
@@ -800,7 +870,7 @@ int main(int argc, char** argv) {
 //   uint16_t ether_type;		        /* packet type ID field	*/
                             ehdr_reply->ether_type = htons(0x0806); //ARP
                             // memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
-                            uint8_t broadcast[6] = {0,0,0,0,0,0};
+                            uint8_t broadcast[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
                             memcpy(ehdr_reply->ether_dhost, broadcast, ETH_ALEN);
                             // ehdr_reply->ether_dhost = ; //broadcast
 
@@ -851,32 +921,13 @@ int main(int argc, char** argv) {
 
                             memcpy(ehdr_reply->ether_shost, macAddress, ETH_ALEN);
 
-//http://www.qnx.com/developers/docs/6.5.0SP1.update/com.qnx.doc.neutrino_lib_ref/i/inet_ntop.html
 
-                            char* str = inet_ntoa(*(struct in_addr*)&(piphdr->daddr));
-
-                            char * pch;
-                            char* dipv4 = new char(4);
-                            int index = 0;
-                            // printf ("Splitting string \"%s\" into tokens:\n",str);
-                            pch = strtok (str,".");
-                            dipv4[index++] = atoi(pch);
-                            for (int k = 1; k < 4; k++) {
-                                // printf("%s\n",pch);
-                                pch = strtok (NULL, ".");
-                                dipv4[index++] = atoi(pch);
-                            }
 
                             // struct in_addr* in = (struct in_addr*)piphdr->daddr;
                             // cout << "       : " << in->s_addr << endl;
                             //char* dipv4 = new char(5);
                             //inet_ntop(AF_INET, &(piphdr->daddr), dipv4, 4);
                             //dipv4[4] = '\0';
-                            cout << "       dest network address: " ;//<< dipv4 <<endl;
-                             printf("%i.%i.%i.%i\n",(unsigned int)dipv4[0],
-                                                     (unsigned int)dipv4[1],
-                                                     (unsigned int)dipv4[2],
-                                                     (unsigned int)dipv4[3]);
 
                             memcpy(eahdr_reply->arp_sha, macAddress, ETH_ALEN);
                             memcpy(eahdr_reply->arp_spa, sipv4, 4);
@@ -1069,7 +1120,7 @@ int main(int argc, char** argv) {
                             eahdr_reply->arp_hln = peahdr->arp_hln;
                             eahdr_reply->arp_pln = peahdr->arp_pln;
                             //struct ether_arp
-
+    //arphdr (something)
      // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
 	// uint8_t arp_spa[4];		/* sender protocol address */
 	// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
@@ -1096,11 +1147,142 @@ int main(int argc, char** argv) {
                             // sizeof(*packet)
                             send(i, packet, sizeof(struct ether_header) + 
                                 sizeof(struct ether_arp), 0);
+
+//---------------------------------------------------------------------
                         } else if (ntohs(peahdr->arp_op) == 2) {  // reply (16 bits)
+//---------------------------------------------------------------------
                             // TODO Parse MAC address and send packet with new ethernet header
                             cout << "ARP reply received" << endl;
+// map < vector<uint8_t>, vector<packetStorage*>> packets; //dest ip addr = packet
+// struct packetStorage {
+//     char* packet;
+//     int bytes;
+// };
+
+                        // send ARP request
+                            
+                            packetStorage* packet;
+                            vector<uint8_t> v;
+                            v.push_back(peahdr->arp_spa[0]);
+                            v.push_back(peahdr->arp_spa[1]);
+                            v.push_back(peahdr->arp_spa[2]);
+                            v.push_back(peahdr->arp_spa[3]);
+
+                            cout << "       dest network address: " ;//<< dipv4 <<endl;
+                             printf("%i.%i.%i.%i\n",(unsigned int)v[0],
+                                                     (unsigned int)v[1],
+                                                     (unsigned int)v[2],
+                                                     (unsigned int)v[3]);
+
+                            while (packets[v].size() > 0) {
+                                packet = packets[v].back();
+                                if (packet == NULL) {
+                                    printf("null packet\n");
+                                }
+
+                                printf("        size of packets[v]: %i\n", packets[v].size());
+
+                                printf("        packet: %0x\n", packet->packet);
+                                // struct iphdr* a = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
+                                struct ether_header* a = (struct ether_header*) (packet->packet);
+                                // a->ether_type = htons(0x800);
+                                // printf("        packet type: %0x\n", a->protocol);
+                                printf("        packet type: %0x\n", ntohs(a->ether_type));
+                                printf("        packet size: %i\n", packet->bytes);
+
+                                packets[v].pop_back();   
 
 
+                                ////////////////////////////////////////
+                                struct ether_header* ehdr_reply = (struct ether_header*) packet->packet;                                
+                                ///////////////////////////////////////                                
+
+                                // struct ether_arp* eahdr_reply = (struct ether_arp*) (packet+ETHER_HDR_LEN);
+
+                                //ehdr_reply.ether_dhost = 
+    //   uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
+    //   uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
+    //   uint16_t ether_type;		        /* packet type ID field	*/
+                                // ehdr_reply->ether_type = htons(0x0806); //ARP
+                                // uint8_t broadcast[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
+                                
+                                ////////////////////////////////////////
+                                // memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+                                // memcpy(ehdr_reply->ether_shost, pehdr->ether_dhost, ETH_ALEN);
+                                memcpy(ehdr_reply->ether_dhost, peahdr->arp_sha, ETH_ALEN);
+                                memcpy(ehdr_reply->ether_shost, peahdr->arp_tha, ETH_ALEN);
+                                ///////////////////////////////////////   
+                                                             
+                                
+                                // ehdr_reply->ether_dhost = ; //broadcast
+
+                                //struct arphdr
+        //unsigned short int ar_op;		/* ARP opcode (command).  */
+        // unsigned short int ar_hrd;		/* Format of hardware address.  */
+        // unsigned short int ar_pro;		/* Format of protocol address.  */
+        // unsigned char ar_hln;		/* Length of hardware address.  */
+        // unsigned char ar_pln;		/* Length of protocol address.  */
+
+    // #define	arp_hrd	ea_hdr.ar_hrd
+    // #define	arp_pro	ea_hdr.ar_pro
+    // #define	arp_hln	ea_hdr.ar_hln
+    // #define	arp_pln	ea_hdr.ar_pln
+    // #define	arp_op	ea_hdr.ar_op
+
+                                // eahdr_reply->arp_op = htons(1);// ARP request
+                                // eahdr_reply->arp_hrd = htons(1);// ethernet //peahdr->arp_hrd;
+                                // eahdr_reply->arp_pro = htons(0x0800);// IP //peahdr->arp_pro;
+                                // eahdr_reply->arp_hln = 6;// //peahdr->arp_hln;
+                                // eahdr_reply->arp_pln = 4;// //peahdr->arp_pln;
+                                
+                                //struct ether_arp
+
+        // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
+        // uint8_t arp_spa[4];		/* sender protocol address */
+        // uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
+        // uint8_t arp_tpa[4];		/* target protocol address */
+
+                                // char* t = port2mac[i];
+                                // uint8_t macAddress[6] = {
+                                //         (uint8_t) t[0],
+                                //         (uint8_t) t[1],
+                                //         (uint8_t) t[2],
+                                //         (uint8_t) t[3],
+                                //         (uint8_t) t[4],
+                                //         (uint8_t) t[5],
+                                //     };
+
+                                // cout << "       Source MAC: ";
+                                // printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+                                // (unsigned char) macAddress[0],
+                                // (unsigned char) macAddress[1],
+                                // (unsigned char) macAddress[2],
+                                // (unsigned char) macAddress[3],
+                                // (unsigned char) macAddress[4],
+                                // (unsigned char) macAddress[5]
+                                // );
+
+                                // memcpy(ehdr_reply->ether_shost, macAddress, ETH_ALEN);
+
+
+
+                                // // struct in_addr* in = (struct in_addr*)piphdr->daddr;
+                                // // cout << "       : " << in->s_addr << endl;
+                                // //char* dipv4 = new char(5);
+                                // //inet_ntop(AF_INET, &(piphdr->daddr), dipv4, 4);
+                                // //dipv4[4] = '\0';
+
+                                // memcpy(eahdr_reply->arp_sha, macAddress, ETH_ALEN);
+                                // memcpy(eahdr_reply->arp_spa, sipv4, 4);
+                                // memcpy(eahdr_reply->arp_tha, broadcast, ETH_ALEN);
+                                // memcpy(eahdr_reply->arp_tpa, dipv4, 4);
+
+                                // ether_dhost
+                                // ether_shost
+                                // sizeof(*packet)
+                                
+                                send(i, packet->packet, packet->bytes, 0);
+                            }
 
 
 
