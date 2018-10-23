@@ -568,121 +568,121 @@ int main(int argc, char** argv) {
                         case 0x06:  // TCP (all of part 2 packet forwarding?)
                         {
 
-                            cout << "   TCP packet Received" << endl;
-                            // Forward packet to dest:
-                            // Look up dest addr from table to get ip 
-                            // addr of next hop. Prefixes all 16 or 24 bits. 
-                            // Max of one match possible.
-                            uint32_t daddr = (uint32_t)ntohl(piphdr->daddr);  // 32 bits
-                            uint32_t hopaddr, hopaddrnet;
-                            int portNum;
-                            std::map<uint32_t, uint32_t>::iterator it;
-                            printf("    Dest ip addr: %#X\n", daddr);
-                            //struct in_addr struct_dest;
-                            //struct_dest.sin_addr.s_addr =  piphdr->daddr;
-                            printf("    or %s\n", inet_ntoa(*(struct in_addr*)&(piphdr->daddr)));
-                            if ((it=net2hop.find(daddr & 0xffff0000)) != net2hop.end() ) {  // 16 bit netlength
-                                hopaddr = net2hop[daddr & 0xffff0000];
-                                char* interface = net2if[daddr & 0xffff0000];
-                                cout << "   interface: " << interface << endl;
-                                string s(interface);
-                                portNum = name2port[s];
-                                cout << "   port: " << portNum << endl;
-                                cout << "   Hop IP addr found in table." << endl;
-                                hopaddrnet = (uint32_t)htonl(hopaddr);
-                                printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
-                            } else if ((it=net2hop.find(daddr & 0xffffff00)) != net2hop.end() ) {  // 24 bit netlength
-                                hopaddr = net2hop[daddr & 0xffffff00];
-                                char* interface = net2if[daddr & 0xffffff00];
-                                cout << "   interface: " << interface << endl;
-                                string s(interface);
-                                portNum = name2port[s];
-                                cout << "   port: " << portNum << endl;
-                                cout << "   Hop IP addr found in table." << endl;
-                                hopaddrnet = (uint32_t)htonl(hopaddr);
-                                printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
-                            } else {
-                                // TODO NO MATCH: PART 3 ACTION HERE
-                                cout << "   No match found in table." << endl;
-                                break;
-                            }
+                             cout << "   TCP packet Received" << endl;
+//                             // Forward packet to dest:
+//                             // Look up dest addr from table to get ip 
+//                             // addr of next hop. Prefixes all 16 or 24 bits. 
+//                             // Max of one match possible.
+//                             uint32_t daddr = (uint32_t)ntohl(piphdr->daddr);  // 32 bits
+//                             uint32_t hopaddr, hopaddrnet;
+//                             int portNum;
+//                             std::map<uint32_t, uint32_t>::iterator it;
+//                             printf("    Dest ip addr: %#X\n", daddr);
+//                             //struct in_addr struct_dest;
+//                             //struct_dest.sin_addr.s_addr =  piphdr->daddr;
+//                             printf("    or %s\n", inet_ntoa(*(struct in_addr*)&(piphdr->daddr)));
+//                             if ((it=net2hop.find(daddr & 0xffff0000)) != net2hop.end() ) {  // 16 bit netlength
+//                                 hopaddr = net2hop[daddr & 0xffff0000];
+//                                 char* interface = net2if[daddr & 0xffff0000];
+//                                 cout << "   interface: " << interface << endl;
+//                                 string s(interface);
+//                                 portNum = name2port[s];
+//                                 cout << "   port: " << portNum << endl;
+//                                 cout << "   Hop IP addr found in table." << endl;
+//                                 hopaddrnet = (uint32_t)htonl(hopaddr);
+//                                 printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+//                             } else if ((it=net2hop.find(daddr & 0xffffff00)) != net2hop.end() ) {  // 24 bit netlength
+//                                 hopaddr = net2hop[daddr & 0xffffff00];
+//                                 char* interface = net2if[daddr & 0xffffff00];
+//                                 cout << "   interface: " << interface << endl;
+//                                 string s(interface);
+//                                 portNum = name2port[s];
+//                                 cout << "   port: " << portNum << endl;
+//                                 cout << "   Hop IP addr found in table." << endl;
+//                                 hopaddrnet = (uint32_t)htonl(hopaddr);
+//                                 printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+//                             } else {
+//                                 // TODO NO MATCH: PART 3 ACTION HERE
+//                                 cout << "   No match found in table." << endl;
+//                                 break;
+//                             }
  
 
-                            // TODO Use ARP to get dest MAC addr: (request hop addr for its MAC addr)
+//                             // TODO Use ARP to get dest MAC addr: (request hop addr for its MAC addr)
 							
-                            if (hopaddr == 0)  // no hop for this network
-							{
+//                             if (hopaddr == 0)  // no hop for this network
+// 							{
 
-							} else {
+// 							} else {
 
-							}
-                            cout << "       Using ARP to get MAC addr for hop" << endl;
+// 							}
+//                             cout << "       Using ARP to get MAC addr for hop" << endl;
                                 
-    // map <uint32_t, uint32_t> net2hop;  // hop ip addr, "-" value if none
-    // map <uint32_t, char*> net2if;   // interface
-    // map <uint32_t, uint8_t> net2length;  // net bits
+//     // map <uint32_t, uint32_t> net2hop;  // hop ip addr, "-" value if none
+//     // map <uint32_t, char*> net2if;   // interface
+//     // map <uint32_t, uint8_t> net2length;  // net bits
 
-                        // send ARP request
-                            uint8_t packet[sizeof(struct ether_header) + sizeof(struct ether_arp)];
-                            struct ether_header* ehdr_reply = (struct ether_header*) packet;
-                            //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
-                            struct ether_arp* eahdr_reply = (struct ether_arp*) (packet+ETHER_HDR_LEN);
-                            //ehdr_reply.ether_dhost = 
-//   uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
-//   uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
-//   uint16_t ether_type;		        /* packet type ID field	*/
-                            ehdr_reply->ether_type = htons(0x0806); //ARP
-                            // memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
-                            uint8_t broadcast[6] = {0,0,0,0,0,0};
-                            memcpy(ehdr_reply->ether_dhost, broadcast, ETH_ALEN);
-                            // ehdr_reply->ether_dhost = ; //broadcast
+//                         // send ARP request
+//                             uint8_t packet[sizeof(struct ether_header) + sizeof(struct ether_arp)];
+//                             struct ether_header* ehdr_reply = (struct ether_header*) packet;
+//                             //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+//                             struct ether_arp* eahdr_reply = (struct ether_arp*) (packet+ETHER_HDR_LEN);
+//                             //ehdr_reply.ether_dhost = 
+// //   uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
+// //   uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
+// //   uint16_t ether_type;		        /* packet type ID field	*/
+//                             ehdr_reply->ether_type = htons(0x0806); //ARP
+//                             // memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+//                             uint8_t broadcast[6] = {0,0,0,0,0,0};
+//                             memcpy(ehdr_reply->ether_dhost, broadcast, ETH_ALEN);
+//                             // ehdr_reply->ether_dhost = ; //broadcast
 
-                            //struct arphdr
-    //unsigned short int ar_op;		/* ARP opcode (command).  */
-    // unsigned short int ar_hrd;		/* Format of hardware address.  */
-    // unsigned short int ar_pro;		/* Format of protocol address.  */
-    // unsigned char ar_hln;		/* Length of hardware address.  */
-    // unsigned char ar_pln;		/* Length of protocol address.  */
+//                             //struct arphdr
+//     //unsigned short int ar_op;		/* ARP opcode (command).  */
+//     // unsigned short int ar_hrd;		/* Format of hardware address.  */
+//     // unsigned short int ar_pro;		/* Format of protocol address.  */
+//     // unsigned char ar_hln;		/* Length of hardware address.  */
+//     // unsigned char ar_pln;		/* Length of protocol address.  */
 
-// #define	arp_hrd	ea_hdr.ar_hrd
-// #define	arp_pro	ea_hdr.ar_pro
-// #define	arp_hln	ea_hdr.ar_hln
-// #define	arp_pln	ea_hdr.ar_pln
-// #define	arp_op	ea_hdr.ar_op
+// // #define	arp_hrd	ea_hdr.ar_hrd
+// // #define	arp_pro	ea_hdr.ar_pro
+// // #define	arp_hln	ea_hdr.ar_hln
+// // #define	arp_pln	ea_hdr.ar_pln
+// // #define	arp_op	ea_hdr.ar_op
 
-                            eahdr_reply->arp_op = htons(1);// ARP request
-                            eahdr_reply->arp_hrd = htons(1);// ethernet //peahdr->arp_hrd;
-                            eahdr_reply->arp_pro = htons(0x0800);// IP //peahdr->arp_pro;
-                            eahdr_reply->arp_hln = htons(6);// //peahdr->arp_hln;
-                            eahdr_reply->arp_pln = htons(4);// //peahdr->arp_pln;
-                            //struct ether_arp
+//                             eahdr_reply->arp_op = htons(1);// ARP request
+//                             eahdr_reply->arp_hrd = htons(1);// ethernet //peahdr->arp_hrd;
+//                             eahdr_reply->arp_pro = htons(0x0800);// IP //peahdr->arp_pro;
+//                             eahdr_reply->arp_hln = htons(6);// //peahdr->arp_hln;
+//                             eahdr_reply->arp_pln = htons(4);// //peahdr->arp_pln;
+//                             //struct ether_arp
 
-     // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
-	// uint8_t arp_spa[4];		/* sender protocol address */
-	// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
-	// uint8_t arp_tpa[4];		/* target protocol address */
+//      // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
+// 	// uint8_t arp_spa[4];		/* sender protocol address */
+// 	// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
+// 	// uint8_t arp_tpa[4];		/* target protocol address */
 
-							char* t = port2mac[portNum];
-                            uint8_t macAddress[6] = {
-									(uint8_t) t[0],
-									(uint8_t) t[1],
-									(uint8_t) t[2],
-									(uint8_t) t[3],
-									(uint8_t) t[4],
-									(uint8_t) t[5],
-								};
-                            memcpy(ehdr_reply->ether_shost, macAddress, ETH_ALEN);
+// 							char* t = port2mac[portNum];
+//                             uint8_t macAddress[6] = {
+// 									(uint8_t) t[0],
+// 									(uint8_t) t[1],
+// 									(uint8_t) t[2],
+// 									(uint8_t) t[3],
+// 									(uint8_t) t[4],
+// 									(uint8_t) t[5],
+// 								};
+//                             memcpy(ehdr_reply->ether_shost, macAddress, ETH_ALEN);
 							
-                            memcpy(eahdr_reply->arp_sha, macAddress, ETH_ALEN);
-                            memcpy(eahdr_reply->arp_spa, peahdr->arp_tpa, 4);
-                            memcpy(eahdr_reply->arp_tha, peahdr->arp_sha, ETH_ALEN);
-                            memcpy(eahdr_reply->arp_tpa, peahdr->arp_spa, 4);
+//                             memcpy(eahdr_reply->arp_sha, macAddress, ETH_ALEN);
+//                             memcpy(eahdr_reply->arp_spa, peahdr->arp_tpa, 4);
+//                             memcpy(eahdr_reply->arp_tha, peahdr->arp_sha, ETH_ALEN);
+//                             memcpy(eahdr_reply->arp_tpa, peahdr->arp_spa, 4);
 
-                            // ether_dhost
-                            // ether_shost
-                            // sizeof(*packet)
-                            send(portNum, packet, sizeof(struct ether_header) + 
-                                sizeof(struct ether_arp), 0);
+//                             // ether_dhost
+//                             // ether_shost
+//                             // sizeof(*packet)
+//                             send(portNum, packet, sizeof(struct ether_header) + 
+//                                 sizeof(struct ether_arp), 0);
 							
 								
 							
@@ -693,7 +693,7 @@ int main(int argc, char** argv) {
 
 
 
-                            break;
+//                             break;
                         }
 
                         case 0x01:  // ICMP
