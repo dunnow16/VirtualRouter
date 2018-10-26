@@ -47,7 +47,7 @@ struct ouricmp {  // 64 bytes
     u_int8_t type;
     u_int8_t code;
     u_int16_t checksum;
-    u_int16_t id;
+    u_int16_t id;  // id and
     u_int16_t sequence;
 };
 struct ouricmpts {  // 128 bytes
@@ -63,6 +63,8 @@ struct packetStorage {
     char* packet;
     int bytes;
 };
+
+u_short cksum(u_short *buf, int count);
 
 int main(int argc, char** argv) {
     int packet_socket;
@@ -118,17 +120,17 @@ int main(int argc, char** argv) {
         //about those for the purpose of enumerating interfaces. We can
         //use the AF_INET addresses in this list for example to get a list
         //of our own IP addresses
-        if(tmp->ifa_addr->sa_family == AF_PACKET) {
-        printf("**\nInterface: %s\n",tmp->ifa_name);
-        //create a packet socket on interface r?-eth1
-        // eth0 to eth3 on table: allow any of these interfaces
-        if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)  ||
-            !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
-            !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
-            !strncmp(&(tmp->ifa_name[3]),"eth3",4) ) {  
-            // Get MAC addr
-            // ifa_addr is "network addr" = mac?
-            //for (int k = 0; k < 14; k++) {
+        if(tmp->ifa_addr->sa_family == AF_PACKET) {  // AF_PACKET for mac addr
+            printf("**\nInterface: %s\n",tmp->ifa_name);
+            //create a packet socket on interface r?-eth1
+            // eth0 to eth3 on table: allow any of these interfaces
+            if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)  ||
+                !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
+                !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
+                !strncmp(&(tmp->ifa_name[3]),"eth3",4) ) {  
+                // Get MAC addr
+                // ifa_addr is "network addr" = mac?
+                //for (int k = 0; k < 14; k++) {
 
                 char* mac = new char[6];
                 for (int k = 10; k <= 15; k++) {
@@ -155,69 +157,69 @@ int main(int argc, char** argv) {
                 //if (k % 2 == 0 && k > 0) cout << ":";
                 //printf("%i", tmp->ifa_addr->sa_data[k]);
                 //cout << tmp->ifa_addr->sa_data[k];
-            //}
-            //cout << endl;
+                //}
+                //cout << endl;
 
-            printf("Creating Socket on interface %s\n",tmp->ifa_name);
-            //create a packet socket
-            //AF_PACKET makes it a packet socket
-            //SOCK_RAW makes it so we get the entire packet
-            //could also use SOCK_DGRAM to cut off link layer header
-            //ETH_P_ALL indicates we want all (upper layer) protocols
-            //we could specify just a specific one
-            packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+                printf("Creating Socket on interface %s\n",tmp->ifa_name);
+                //create a packet socket
+                //AF_PACKET makes it a packet socket
+                //SOCK_RAW makes it so we get the entire packet
+                //could also use SOCK_DGRAM to cut off link layer header
+                //ETH_P_ALL indicates we want all (upper layer) protocols
+                //we could specify just a specific one
+                packet_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 
-            port2mac.insert(pair<int, char*>(packet_socket, mac));
+                port2mac.insert(pair<int, char*>(packet_socket, mac));
 
-            //update name2port
-            char* t = new char[8];  // char(8) assigns 1 char value 8
-            strcpy(t, tmp->ifa_name);
-            t[7] = '\0';
-            string s(t);
-            // name2port.insert(pair<char*, int>(t, packet_socket));
-            name2port.insert(pair<string, int>(s, packet_socket));
-            //if(!strncmp(tmp->ifa_name,"r1-eth0",7 ) ) {
-                cout << "name2port key: " << t << " value: " << packet_socket << endl;
-            //}
+                //update name2port
+                char* t = new char[8];  // char(8) assigns 1 char value 8
+                strcpy(t, tmp->ifa_name);
+                t[7] = '\0';
+                string s(t);
+                // name2port.insert(pair<char*, int>(t, packet_socket));
+                name2port.insert(pair<string, int>(s, packet_socket));
+                //if(!strncmp(tmp->ifa_name,"r1-eth0",7 ) ) {
+                    cout << "name2port key: " << t << " value: " << packet_socket << endl;
+                //}
 
-            if(packet_socket<0) {
-            perror("socket");
-            return 2;
+                if(packet_socket<0) {
+                perror("socket");
+                return 2;
+                }
+                //Bind the socket to the address, so we only get packets
+                //recieved on this specific interface. For packet sockets, the
+                //address structure is a struct sockaddr_ll (see the man page
+                //for "packet"), but of course bind takes a struct sockaddr.
+                //Here, we can use the sockaddr we got from getifaddrs (which
+                //we could convert to sockaddr_ll if we needed to)
+                if(bind(packet_socket, tmp->ifa_addr, 
+                sizeof(struct sockaddr_ll)) == -1) {
+                    perror("bind");
+                }
+
+                // listen to connections from clients, give a backlog number of up to 
+                // 10 clients to accept at once, rejects all further clients
+                listen(packet_socket, 10);  // needed? TODO
+                // adds the fd to the set pointed to (can do with any fd)
+                FD_SET(packet_socket, &sockets); 
             }
-            //Bind the socket to the address, so we only get packets
-            //recieved on this specific interface. For packet sockets, the
-            //address structure is a struct sockaddr_ll (see the man page
-            //for "packet"), but of course bind takes a struct sockaddr.
-            //Here, we can use the sockaddr we got from getifaddrs (which
-            //we could convert to sockaddr_ll if we needed to)
-            if(bind(packet_socket, tmp->ifa_addr, 
-               sizeof(struct sockaddr_ll)) == -1) {
-                perror("bind");
-            }
-
-            // listen to connections from clients, give a backlog number of up to 
-            // 10 clients to accept at once, rejects all further clients
-            listen(packet_socket, 10);  // needed? TODO
-            // adds the fd to the set pointed to (can do with any fd)
-            FD_SET(packet_socket, &sockets); 
-        }
         }
 
-        else if(tmp->ifa_addr->sa_family == AF_INET) {
-        printf("--\nIP Interface: %s\n",tmp->ifa_name);
-        //create a packet socket on interface r?-eth1
-        // eth0 to eth3 on table: allow any of these interfaces
-        if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)  ||
-            !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
-            !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
-            !strncmp(&(tmp->ifa_name[3]),"eth3",4) )
-            {  
+        else if(tmp->ifa_addr->sa_family == AF_INET) {  // need to know ip addr fro arp request
+            printf("--\nIP Interface: %s\n",tmp->ifa_name);
+            //create a packet socket on interface r?-eth1
+            // eth0 to eth3 on table: allow any of these interfaces
+            if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)  ||
+                !strncmp(&(tmp->ifa_name[3]),"eth1",4)  ||
+                !strncmp(&(tmp->ifa_name[3]),"eth2",4)  ||
+                !strncmp(&(tmp->ifa_name[3]),"eth3",4) )
+                {  
                 // Get MAC addr
                 // ifa_addr is "network addr" = mac?
                 //for (int k = 0; k < 14; k++) {
 
                 char* mac = new char[4];
-                for (int k = 2; k <= 5; k++) {
+                for (int k = 2; k <= 5; k++) {  // bits 2 to 5 are ip addr
                     mac[k-2] = tmp->ifa_addr->sa_data[k];
                 }
 
@@ -257,20 +259,20 @@ int main(int argc, char** argv) {
                     //cout << tmp->ifa_addr->sa_data[k];
                 //}
                 //cout << endl;
-                char chase[14];
+                //char chase[14];
                 // string ma(&(chase[0]), 4);
                 
-                strcpy(chase, tmp->ifa_addr->sa_data);
+                //strcpy(chase, tmp->ifa_addr->sa_data);
                 // cout << "chase: " << chase << endl;
                 // cout << "addr: " << tmp->ifa_addr->sa_data << endl;
-                string ma(&(tmp->ifa_addr->sa_data[2]),4);
+                //string ma(&(tmp->ifa_addr->sa_data[2]),4);
                 //update name2ip
                 char* t = new char[8];  // char(8) assigns 1 char value 8
                 strcpy(t, tmp->ifa_name);
                 t[7] = '\0';
                 string s(t);
 
-                string sip = ma;
+                //string sip = ma;
                 // cout << "value: " << sip << endl;
                 // name2port.insert(pair<char*, int>(t, packet_socket));
                 //name2ip.insert(pair<string, string>(s, sip));
@@ -279,12 +281,12 @@ int main(int argc, char** argv) {
                 //if(!strncmp(tmp->ifa_name,"r1-eth0",7 ) ) {
                     // cout << "name2ip key: " << s << " value: " << name2ip[s] << endl;
                 //}
-                    printf("%i.%i.%i.%i\n",
-                    (unsigned char) name2ip[s][0],
-                    (unsigned char) name2ip[s][1],
-                    (unsigned char) name2ip[s][2],
-                    (unsigned char) name2ip[s][3]
-                    );
+                printf("%i.%i.%i.%i\n",
+                (unsigned char) name2ip[s][0],
+                (unsigned char) name2ip[s][1],
+                (unsigned char) name2ip[s][2],
+                (unsigned char) name2ip[s][3]
+                );
             }
         }        
     }
@@ -567,7 +569,6 @@ int main(int argc, char** argv) {
                         {
                         case 0x06:  // TCP (all of part 2 packet forwarding?)
                         {
-
                              cout << "   TCP packet Received" << endl;
 //                             // Forward packet to dest:
 //                             // Look up dest addr from table to get ip 
@@ -750,6 +751,9 @@ int main(int argc, char** argv) {
                             } else {
                                 // TODO NO MATCH: PART 3 ACTION HERE
                                 cout << "   No match found in table." << endl;
+
+
+
                                 break;
                             }
                             
@@ -767,7 +771,7 @@ int main(int argc, char** argv) {
                             char* str = inet_ntoa(*(struct in_addr*)&(hopaddr));
 
                             char * pch;
-                            char* dipv4 = new char(4);
+                            char* dipv4 = new char[4];  // was char(4)
                             int index = 0;
                             // printf ("Splitting string \"%s\" into tokens:\n",str);
                             pch = strtok (str,".");
@@ -797,10 +801,10 @@ int main(int argc, char** argv) {
                             v.push_back(dipv4[3]);
 
                             cout << "       dest network address: " ;//<< dipv4 <<endl;
-                             printf("%i.%i.%i.%i\n",(unsigned int)v[0],
-                                                     (unsigned int)v[1],
-                                                     (unsigned int)v[2],
-                                                     (unsigned int)v[3]);
+                            printf("%i.%i.%i.%i\n",(unsigned int)v[0],
+                                                    (unsigned int)v[1],
+                                                    (unsigned int)v[2],
+                                                    (unsigned int)v[3]);
 
                             // packets[(uint8_t*) dipv4].push_back(pckt);
                             packets[v].push_back(pckt);
@@ -920,8 +924,6 @@ int main(int argc, char** argv) {
                             );
 
                             memcpy(ehdr_reply->ether_shost, macAddress, ETH_ALEN);
-
-
 
                             // struct in_addr* in = (struct in_addr*)piphdr->daddr;
                             // cout << "       : " << in->s_addr << endl;
@@ -1213,7 +1215,6 @@ int main(int argc, char** argv) {
                                 memcpy(ehdr_reply->ether_shost, peahdr->arp_tha, ETH_ALEN);
                                 ///////////////////////////////////////   
                                                              
-                                
                                 // ehdr_reply->ether_dhost = ; //broadcast
 
                                 //struct arphdr
@@ -1282,7 +1283,7 @@ int main(int argc, char** argv) {
                                 // sizeof(*packet)
                                 
                                 send(i, packet->packet, packet->bytes, 0);
-                            }
+                            }  // end of while
 
 
 
@@ -1317,4 +1318,22 @@ int main(int argc, char** argv) {
     freeifaddrs(ifaddr);
     //exit
     return 0;
+}
+
+u_short cksum(u_short *buf, int count)
+{
+    register u_long sum = 0;
+    while (count--)
+    {
+        sum += *buf++;
+        if (sum & 0xFFFF0000)
+        {
+            /* carry occurred,
+            so wrap around */
+            sum &= 0xFFFF;
+            sum++;
+        }
+    }
+
+    return (sum & 0xFFFF);
 }
