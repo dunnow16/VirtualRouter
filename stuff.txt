@@ -26,7 +26,7 @@
 // };
 
 //struct arphdr
-// ether_arp something
+// ether_arp ea_hdr
 //unsigned short int ar_op;		/* ARP opcode (command).  */
 // unsigned short int ar_hrd;		/* Format of hardware address.  */
 // unsigned short int ar_pro;		/* Format of protocol address.  */
@@ -52,5 +52,10 @@ struct ouricmp {  // 64 bytes
     u_int16_t checksum;
     u_int16_t id;
     u_int16_t sequence;
+};
+
+struct packetStorage {
+    char* packet;
+    int bytes;
 };
 
