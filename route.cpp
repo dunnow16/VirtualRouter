@@ -1170,7 +1170,7 @@ int main(int argc, char** argv) {
                             v.push_back(peahdr->arp_spa[2]);
                             v.push_back(peahdr->arp_spa[3]);
 
-                            cout << "       dest network address: " ;//<< dipv4 <<endl;
+                            cout << "       dest network address: " ; //<< dipv4 <<endl;
                              printf("%i.%i.%i.%i\n",(unsigned int)v[0],
                                                      (unsigned int)v[1],
                                                      (unsigned int)v[2],
