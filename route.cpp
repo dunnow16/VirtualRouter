@@ -1144,9 +1144,7 @@ int main(int argc, char** argv) {
                             memcpy(eahdr_reply->arp_tha, peahdr->arp_sha, ETH_ALEN);
                             memcpy(eahdr_reply->arp_tpa, peahdr->arp_spa, 4);
 
-                            // ether_dhost
-                            // ether_shost
-                            // sizeof(*packet)
+                           
                             send(i, packet, sizeof(struct ether_header) + 
                                 sizeof(struct ether_arp), 0);
 
@@ -1161,7 +1159,6 @@ int main(int argc, char** argv) {
 //     int bytes;
 // };
 
-                        // send ARP request
                             
                             packetStorage* packet;
                             vector<uint8_t> v;
@@ -1185,12 +1182,22 @@ int main(int argc, char** argv) {
                                 printf("        size of packets[v]: %i\n", packets[v].size());
 
                                 printf("        packet: %0x\n", packet->packet);
-                                // struct iphdr* a = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
-                                struct ether_header* a = (struct ether_header*) (packet->packet);
+                                struct ether_header* packet_ether_header = (struct ether_header*) (packet->packet);
                                 // a->ether_type = htons(0x800);
                                 // printf("        packet type: %0x\n", a->protocol);
-                                printf("        packet type: %0x\n", ntohs(a->ether_type));
+                                printf("        packet type: %0x\n", ntohs(packet_ether_header->ether_type));
                                 printf("        packet size: %i\n", packet->bytes);
+                                struct iphdr* packet_iphdr = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
+                                // Decrement TTL
+                                // Send ICMP error if packet is dying.  Finish it off.
+                                int sendPacket = 1;
+                                if (packet_iphdr->ttl <= 1) {
+                                    sendPacket = 0;                                    
+                                }
+                                // No problems, decrement
+                                else {
+                                    packet_iphdr->ttl--;
+                                }
 
                                 packets[v].pop_back();   
 
@@ -1281,8 +1288,271 @@ int main(int argc, char** argv) {
                                 // ether_dhost
                                 // ether_shost
                                 // sizeof(*packet)
-                                
-                                send(i, packet->packet, packet->bytes, 0);
+
+                                // Don't send the packet if it's supposed to be dead
+                                if (sendPacket > 0) {
+                                    send(i, packet->packet, packet->bytes, 0);
+                                }
+                                // If packet is dead, create and send error message.
+                                else {
+                                    //8 is 8 bytes of original packet
+                                    int packet_size = ETHER_HDR_LEN + 2*sizeof(struct iphdr) + sizeof(struct ouricmp) + 8;
+                                    icmphdr = 
+                                        (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                    tsicmphdr = (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                    // Check for ICMP here (within)
+                                    // cout << "ICMP packet found" << endl;
+                                    uint8_t packetICMP[packet_size];
+                                    struct ether_header* ehdr_reply = (struct ether_header*) packetICMP;
+                                    //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+                                    struct iphdr* iphdr_reply = 
+                                        (struct iphdr*) (packetICMP+ETHER_HDR_LEN);
+                                    struct ouricmp* icmphdr_reply = 
+                                        (struct ouricmp*) (packetICMP+ETHER_HDR_LEN+sizeof(struct iphdr));
+
+                                    icmphdr_reply->type = htons(11);
+                                    icmphdr_reply->code = 0;
+                                    // TODO: create checksum
+                                    icmphdr_reply->checksum = 0;
+                                    // id and sequence fields are unused
+                                    icmphdr_reply->id = 0;
+                                    icmphdr_reply->sequence = 0;
+
+                                    //Copy first 8 bytes of original packet
+                                    //TODO: accessing right bytes? Should it be offset less or more?
+                                    memcpy(packetICMP + 
+                                        packet_size - 8, 
+                                        packet->packet + sizeof(ETHER_HDR_LEN+sizeof(struct iphdr)), 
+                                        8);
+
+                                    //ethernet header
+                                    ehdr_reply->ether_type = ehdr_reply->ether_type;
+                                    memcpy(ehdr_reply->ether_shost, ehdr_reply->ether_dhost, ETH_ALEN);
+                                    // We don't know the next destination link so store this packet and send out an ARP request
+                                    //memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+      
+                                    // TODO -- confirm that copying IP values from original packet is ok
+                                    // Maybe needs to be changed depending on error type??
+                                    iphdr_reply->ihl = packet_iphdr->ihl;
+                                    iphdr_reply->version = packet_iphdr->version;
+                                    iphdr_reply->tos = packet_iphdr->tos;
+                                    iphdr_reply->tot_len = packet_iphdr->tot_len;
+                                    iphdr_reply->id = packet_iphdr->id;
+                                    iphdr_reply->frag_off = packet_iphdr->frag_off;
+                                    iphdr_reply->ttl = htons(64);
+                                    iphdr_reply->protocol = packet_iphdr->protocol;
+                                    // TODO -- create checksum
+                                    iphdr_reply->check = 0;
+                                    iphdr_reply->saddr = packet_iphdr->daddr;
+                                    iphdr_reply->daddr = packet_iphdr->saddr;
+ 
+                                    // send(i, packet, packet_size, 0);                                    
+
+                                    //---------------------------------------------------
+                                    // Create ARP packet
+
+                                    // Forward packet to dest:
+                                    // Look up dest addr from table to get ip 
+                                    // addr of next hop. Prefixes all 16 or 24 bits. 
+                                    // Max of one match possible.
+                                    uint32_t daddr = (uint32_t)ntohl(packet_iphdr->saddr);  // 32 bits
+                                    uint32_t hopaddr, hopaddrnet;
+                                    int portNum;
+                                    std::map<uint32_t, uint32_t>::iterator it;
+                                    char* sipv4; //router ipv4
+                                    printf("    Dest ip addr: %#X\n", daddr);
+                                    //struct in_addr struct_dest;
+                                    //struct_dest.sin_addr.s_addr =  piphdr->daddr;
+                                    printf("    or %s\n", inet_ntoa(*(struct in_addr*)&(packet_iphdr->saddr)));
+                                    if ((it=net2hop.find(daddr & 0xffffff00)) != net2hop.end() ) {  // 16 bit netlength
+                                        hopaddr = net2hop[daddr & 0xffffff00];
+                                        char* interface = net2if[daddr & 0xffffff00];
+                                        cout << "   interface (1): " << interface << endl;
+                                        string s(interface);
+                                        portNum = name2port[s];
+                                        sipv4 = name2ip[s];
+                                        cout << "   port: " << portNum << endl;
+                                        cout << "   Hop IP addr found in table." << endl;
+                                        hopaddrnet = (uint32_t)htonl(hopaddr);
+                                        printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+
+                                    } else if ((it=net2hop.find(daddr & 0xffff0000)) != net2hop.end() ) {  // 24 bit netlength
+                                        hopaddr = net2hop[daddr & 0xffff0000];
+                                        char* interface = net2if[daddr & 0xffff0000];
+                                        cout << "   interface (2): " << interface << endl;
+                                        string s(interface);
+                                        portNum = name2port[s];
+                                        sipv4 = name2ip[s];
+                                        cout << "   port: " << portNum << endl;
+                                        cout << "   Hop IP addr found in table." << endl;
+                                        hopaddrnet = (uint32_t)htonl(hopaddr);
+                                        printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
+                                    } else {
+                                        // TODO NO MATCH: PART 3 ACTION HERE
+                                        cout << "   No match found in table." << endl;
+                                        break;
+                                    }
+                                    
+                                    if (hopaddr == 0)  // no hop for this network
+                                    {
+                                        hopaddr = packet_iphdr->saddr;
+                                    } else {
+                                        hopaddr = (uint32_t)htonl(hopaddr); //flip it
+                                    }
+                                    
+
+                                    //contruct hop address as an octet array x.x.x.x
+                                    // char* str = inet_ntoa(*(struct in_addr*)&(piphdr->daddr));
+                                    // uint32_t backwards = htons(hopaddr);
+                                    char* str = inet_ntoa(*(struct in_addr*)&(hopaddr));
+
+                                    char * pch;
+                                    char* dipv4 = new char[4];  // was char(4)
+                                    int index = 0;
+                                    // printf ("Splitting string \"%s\" into tokens:\n",str);
+                                    pch = strtok (str,".");
+                                    dipv4[index++] = atoi(pch);
+                                    for (int k = 1; k < 4; k++) {
+                                        // printf("%s\n",pch);
+                                        pch = strtok (NULL, ".");
+                                        dipv4[index++] = atoi(pch);
+                                    }
+
+                                    // Store packet for later forwarding
+                                    struct packetStorage* pckt = new (struct packetStorage);
+            // struct packetStorage {
+            //     char* packet;
+            //     int bytes;
+            // };
+                                    // pckt->packet = buf;
+                                    pckt->packet = new char[packet_size];
+                                    // for (int k = 0; k < bytes_n; k++) {
+                                        memcpy(pckt->packet, packet, packet_size);
+                                    // }
+                                    pckt->bytes = bytes_n;
+                                    vector<uint8_t> v;
+                                    v.push_back(dipv4[0]);
+                                    v.push_back(dipv4[1]);
+                                    v.push_back(dipv4[2]);
+                                    v.push_back(dipv4[3]);
+
+                                    cout << "       dest network address: " ;//<< dipv4 <<endl;
+                                    printf("%i.%i.%i.%i\n",(unsigned int)v[0],
+                                                            (unsigned int)v[1],
+                                                            (unsigned int)v[2],
+                                                            (unsigned int)v[3]);
+
+                                    // packets[(uint8_t*) dipv4].push_back(pckt);
+                                    packets[v].push_back(pckt);
+
+                                    printf("        size of packets[v]: %i\n", packets[v].size());
+                                    if (packets[v].size() > 0) {
+                                        // printf("        packet: %0x\n", packets[v].back()->packet);
+                                        // struct iphdr* a = (struct iphdr*) (packets[v].back()->packet+ETHER_HDR_LEN);
+                                        // printf("        packet type: %i\n", a->protocol);
+                                        // printf("        size of packets[v]: %i\n", packets[v].size());
+
+                                        printf("        packet: %0x\n", packets[v].back()->packet);
+                                        // struct iphdr* a = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
+                                        struct ether_header* a = (struct ether_header*) (packets[v].back()->packet);
+                                        // printf("        packet type: %0x\n", a->protocol);
+                                        printf("        packet type: %0x\n", ntohs(a->ether_type));
+                                        printf("        original packet type: %0x\n", ntohs(pehdr->ether_type));
+                                        printf("        packet size: %i\n", packets[v].back()->bytes);
+                                    }
+
+                                    printf("    router ip %i.%i.%i.%i\n",
+                                    (unsigned char) sipv4[0],
+                                    (unsigned char) sipv4[1],
+                                    (unsigned char) sipv4[2],
+                                    (unsigned char) sipv4[3]
+                                    );
+
+                                    // TODO Use ARP to get dest MAC addr: (request hop addr for its MAC addr)
+                                    
+                                    //add the packet to the map
+
+                                    cout << "       Using ARP to get MAC addr for hop" << endl;
+
+                                // send ARP request
+                                    uint8_t packetARP[sizeof(struct ether_header) + sizeof(struct ether_arp)];
+                                    struct ether_header* ehdr_replyARP = (struct ether_header*) packetARP;
+                                    //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+                                    struct ether_arp* eahdr_replyARP = (struct ether_arp*) (packetARP+ETHER_HDR_LEN);
+                                    //ehdr_reply.ether_dhost = 
+        //   uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
+        //   uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
+        //   uint16_t ether_type;		        /* packet type ID field	*/
+                                    ehdr_replyARP->ether_type = htons(0x0806); //ARP
+                                    // memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
+                                    uint8_t broadcast[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
+                                    memcpy(ehdr_replyARP->ether_dhost, broadcast, ETH_ALEN);
+                                    // ehdr_reply->ether_dhost = ; //broadcast
+
+                                    //struct arphdr
+            //unsigned short int ar_op;		/* ARP opcode (command).  */
+            // unsigned short int ar_hrd;		/* Format of hardware address.  */
+            // unsigned short int ar_pro;		/* Format of protocol address.  */
+            // unsigned char ar_hln;		/* Length of hardware address.  */
+            // unsigned char ar_pln;		/* Length of protocol address.  */
+
+        // #define	arp_hrd	ea_hdr.ar_hrd
+        // #define	arp_pro	ea_hdr.ar_pro
+        // #define	arp_hln	ea_hdr.ar_hln
+        // #define	arp_pln	ea_hdr.ar_pln
+        // #define	arp_op	ea_hdr.ar_op
+
+                                    eahdr_replyARP->arp_op = htons(1);// ARP request
+                                    eahdr_replyARP->arp_hrd = htons(1);// ethernet //peahdr->arp_hrd;
+                                    eahdr_replyARP->arp_pro = htons(0x0800);// IP //peahdr->arp_pro;
+                                    eahdr_replyARP->arp_hln = 6;// //peahdr->arp_hln;
+                                    eahdr_replyARP->arp_pln = 4;// //peahdr->arp_pln;
+                                    //struct ether_arp
+
+            // uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
+            // uint8_t arp_spa[4];		/* sender protocol address */
+            // uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
+            // uint8_t arp_tpa[4];		/* target protocol address */
+
+                                    char* t = port2mac[portNum];
+                                    uint8_t macAddress[6] = {
+                                            (uint8_t) t[0],
+                                            (uint8_t) t[1],
+                                            (uint8_t) t[2],
+                                            (uint8_t) t[3],
+                                            (uint8_t) t[4],
+                                            (uint8_t) t[5],
+                                        };
+
+                                    cout << "       Source MAC: ";
+                                    printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
+                                    (unsigned char) macAddress[0],
+                                    (unsigned char) macAddress[1],
+                                    (unsigned char) macAddress[2],
+                                    (unsigned char) macAddress[3],
+                                    (unsigned char) macAddress[4],
+                                    (unsigned char) macAddress[5]
+                                    );
+
+                                    memcpy(ehdr_replyARP->ether_shost, macAddress, ETH_ALEN);
+
+                                    // struct in_addr* in = (struct in_addr*)piphdr->daddr;
+                                    // cout << "       : " << in->s_addr << endl;
+                                    //char* dipv4 = new char(5);
+                                    //inet_ntop(AF_INET, &(piphdr->daddr), dipv4, 4);
+                                    //dipv4[4] = '\0';
+
+                                    memcpy(eahdr_replyARP->arp_sha, macAddress, ETH_ALEN);
+                                    memcpy(eahdr_replyARP->arp_spa, sipv4, 4);
+                                    memcpy(eahdr_replyARP->arp_tha, broadcast, ETH_ALEN);
+                                    memcpy(eahdr_replyARP->arp_tpa, dipv4, 4);
+
+                                    // ether_dhost
+                                    // ether_shost
+                                    // sizeof(*packet)
+                                    send(portNum, packetARP, sizeof(struct ether_header) + 
+                                        sizeof(struct ether_arp), 0);
+                                }
                             }  // end of while
 
 
