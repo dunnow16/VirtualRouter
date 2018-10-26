@@ -1,50 +1,66 @@
-//struct ether_header
-//   uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
-//   uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
-//   uint16_t ether_type;		        /* packet type ID field	*/
+// Reference taken from several header files and own virtual router
 
-// struct iphdr {
-// #if defined(__LITTLE_ENDIAN_BITFIELD)
-// 	__u8	ihl:4,
-// 		version:4;
-// #elif defined (__BIG_ENDIAN_BITFIELD)
-// 	__u8	version:4,
-//   		ihl:4;
-// #else
-// #error	"Please fix <asm/byteorder.h>"
-// #endif
-// 	__u8	tos;
-// 	__u16	tot_len;
-// 	__u16	id;
-// 	__u16	frag_off;
-// 	__u8	ttl;
-// 	__u8	protocol;
-// 	__u16	check;
-// 	__u32	saddr;
-// 	__u32	daddr;
-// 	/*The options start here. */
-// };
+struct ifaddrs {
+    struct ifaddrs *  ifa_next;
+    char *            ifa_name;
+    u_int             ifa_flags;
+    struct sockaddr * ifa_addr;
+    struct sockaddr * ifa_netmask;
+    struct sockaddr * ifa_dstaddr;
+    void *            ifa_data;
+};
+  struct sockaddr {
+        ushort  sa_family;
+        char    sa_data[14];
+};
 
-//struct arphdr
-// ether_arp ea_hdr
-//unsigned short int ar_op;		/* ARP opcode (command).  */
-// unsigned short int ar_hrd;		/* Format of hardware address.  */
-// unsigned short int ar_pro;		/* Format of protocol address.  */
-// unsigned char ar_hln;		/* Length of hardware address.  */
-// unsigned char ar_pln;		/* Length of protocol address.  */
+struct ether_header
+  uint8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
+  uint8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
+  uint16_t ether_type;		        /* packet type ID field	*/
 
-// #define	arp_hrd	ea_hdr.ar_hrd
-// #define	arp_pro	ea_hdr.ar_pro
-// #define	arp_hln	ea_hdr.ar_hln
-// #define	arp_pln	ea_hdr.ar_pln
-// #define	arp_op	ea_hdr.ar_op
+struct iphdr {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8	ihl:4,
+		version:4;
+#elif defined (__BIG_ENDIAN_BITFIELD)
+	__u8	version:4,
+  		ihl:4;
+#else
+#error	"Please fix <asm/byteorder.h>"
+#endif
+	__u8	tos;
+	__u16	tot_len;
+	__u16	id;
+	__u16	frag_off;
+	__u8	ttl;
+	__u8	protocol;
+	__u16	check;
+	__u32	saddr;
+	__u32	daddr;
+	/*The options start here. */
+};
 
-//struct ether_arp
+struct arphdr
+ether_arp ea_hdr
+unsigned short int ar_op;		/* ARP opcode (command).  */
+unsigned short int ar_hrd;		/* Format of hardware address.  */
+unsigned short int ar_pro;		/* Format of protocol address.  */
+unsigned char ar_hln;		/* Length of hardware address.  */
+unsigned char ar_pln;		/* Length of protocol address.  */
 
-// uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
-// uint8_t arp_spa[4];		/* sender protocol address */
-// uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
-// uint8_t arp_tpa[4];		/* target protocol address */
+#define	arp_hrd	ea_hdr.ar_hrd
+#define	arp_pro	ea_hdr.ar_pro
+#define	arp_hln	ea_hdr.ar_hln
+#define	arp_pln	ea_hdr.ar_pln
+#define	arp_op	ea_hdr.ar_op
+
+struct ether_arp
+
+uint8_t arp_sha[ETH_ALEN];	/* sender hardware address */
+uint8_t arp_spa[4];		/* sender protocol address */
+uint8_t arp_tha[ETH_ALEN];	/* target hardware address */
+uint8_t arp_tpa[4];		/* target protocol address */
 
 struct ouricmp {  // 64 bytes
     u_int8_t type;
@@ -54,8 +70,21 @@ struct ouricmp {  // 64 bytes
     u_int16_t sequence;
 };
 
+// icmp header
+u_int8_t type;
+u_int8_t code;
+u_int16_t checksum;
+u_int16_t id;
+u_int16_t sequence;
+
 struct packetStorage {
     char* packet;
     int bytes;
 };
+
+// Maps used:
+map < vector<uint8_t>, vector<packetStorage*> > packets; 
+map <uint32_t, uint32_t> net2hop;  // hop ip addr, "-" value if none
+map <uint32_t, char*> net2if;   // interface
+map <uint32_t, uint8_t> net2length;  // net bits
 
