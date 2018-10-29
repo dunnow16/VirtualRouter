@@ -587,8 +587,8 @@ int main(int argc, char** argv) {
                                 printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
                             } else {
                                 // TODO NO MATCH: PART 3 ACTION HERE
-                                cout << "   No match found in table." << endl;
-                                cout << "Sending     error packet." << endl;
+                                cout << "   TCP/ICMP: No match found in table." << endl;
+                                cout << "Sending ICMP Destination Unreachable packet." << endl;
 
 
 
@@ -607,7 +607,7 @@ int main(int argc, char** argv) {
                             // uint32_t backwards = htons(hopaddr);
                             char* str = inet_ntoa(*(struct in_addr*)&(hopaddr));
                             char* pch;
-                            char* dipv4 = new char[4];  // was char(4)
+                            char* dipv4 = new char[4];
                             int index = 0;
                             // printf ("Splitting string \"%s\" into tokens:\n",str);
                             pch = strtok (str, ".");
@@ -670,7 +670,7 @@ int main(int argc, char** argv) {
 
                             // Use ARP to get dest MAC addr: (request hop addr for its MAC addr)
                             // add the packet to the map
-                            cout << "       Using ARP to get MAC addr for forward" << endl;
+                            cout << "       TCP/ICMP: Using ARP to get MAC addr for forward" << endl;
                             ///////////////////////////////////////////////////
                             // Send ARP request
                             // Create ARP request packet and then send: TODO make into function
@@ -933,17 +933,21 @@ int main(int argc, char** argv) {
                                 // printf("        packet type: %0x\n", a->protocol);
                                 printf("        packet type: %0x\n", ntohs(packet_ehdr->ether_type));
                                 printf("        packet size: %i\n", packet->bytes);
-                                struct iphdr* packet_iphdr = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
+                                struct iphdr* packet_iphdr = (struct iphdr*) ((packet->packet)+ETHER_HDR_LEN);
 
                                 // Decrement TTL (not checked until arp reply received)
                                 // Send ICMP error if packet time out, discard packet.
                                 int sendPacket = 1;
+                                printf("TTL value: %i\n", packet_iphdr->ttl);
                                 if (packet_iphdr->ttl <= 1) {
+                                    cout << "Time out on packet" << endl;
                                     sendPacket = 0;                                    
                                 }
                                 // No problems, decrement
                                 else {
-                                    packet_iphdr->ttl -= 1;  // 8 bits
+                                    packet_iphdr->ttl -= (uint8_t)1;  // 8 bits (cast to prevent 32 bit length?)
+                                    printf("New TTL value: %i\n", packet_iphdr->ttl);
+                                    printf("Protocol value: %i\n", packet_iphdr->protocol);
                                 }
 
                                 // TODO should you do this after sending? mem addr likely still avail though
@@ -1004,7 +1008,8 @@ int main(int argc, char** argv) {
                                 // sizeof(*packet)
                                 
                                 // Don't send the packet if it's supposed to be dead
-                                if (sendPacket > 0) {
+                                if (sendPacket) {
+                                    cout << "   Sending packet to dest" << endl;
                                     send(i, packet->packet, packet->bytes, 0);  
                                 }
                                 // If packet is dead, create and send error message.
@@ -1030,21 +1035,21 @@ int main(int argc, char** argv) {
                                     struct ouricmp* icmphdr_reply = 
                                         (struct ouricmp*) (packetICMP+ETHER_HDR_LEN+sizeof(struct iphdr));
 
-                                    icmphdr_reply->type = htons(11);
-                                    icmphdr_reply->code = 0;
+                                    icmphdr_reply->type = (uint8_t)htons(11);  //8
+                                    icmphdr_reply->code = (uint8_t)0;  //8
                                     // TODO: create checksum
 
 
-                                    icmphdr_reply->checksum = 0;
+                                    icmphdr_reply->checksum = (uint16_t)0;
                                     // id and sequence fields are unused - set to 0
-                                    icmphdr_reply->id = 0;
-                                    icmphdr_reply->sequence = 0;
+                                    icmphdr_reply->id = (uint16_t)0;
+                                    icmphdr_reply->sequence = (uint16_t)0;
                                     
                                     //Copy first 8 bytes of original packet
                                     //TODO: accessing right bytes? Should it be offset less or more?
-                                    memcpy(packetICMP + 
-                                        packet_size - 8, 
-                                        packet->packet + sizeof(ETHER_HDR_LEN + sizeof(struct iphdr)), 
+                                    // TCP header? is it between ip and data?
+                                    memcpy(packetICMP + packet_size - 8, 
+                                        (packet->packet) + ETHER_HDR_LEN + sizeof(struct iphdr), 
                                         8);
 
                                     //ethernet header
@@ -1064,11 +1069,11 @@ int main(int argc, char** argv) {
                                     iphdr_reply->tot_len = packet_iphdr->tot_len;
                                     iphdr_reply->id = packet_iphdr->id;
                                     iphdr_reply->frag_off = packet_iphdr->frag_off;
-                                    iphdr_reply->ttl = htons(64);
-                                    iphdr_reply->protocol = 1; // ICMP packet_iphdr->protocol;
+                                    iphdr_reply->ttl = (uint8_t)htons(64);  //ttl is 8 bits
+                                    iphdr_reply->protocol = (uint8_t)1; // ICMP packet_iphdr->protocol;
                                     // TODO -- create checksum
 
-                                    iphdr_reply->check = 0;
+                                    iphdr_reply->check = (uint16_t)0;  //checksum is 16b
                                     iphdr_reply->saddr = packet_iphdr->daddr;
                                     iphdr_reply->daddr = packet_iphdr->saddr;
 
@@ -1115,6 +1120,7 @@ int main(int argc, char** argv) {
                                     } else {
                                         // TODO NO MATCH: PART 3 ACTION HERE
                                         cout << "   No match found in table." << endl;
+                                        // This shouldn't happen here? leave blank for now..
                                         break;
                                     }
 
