@@ -945,7 +945,19 @@ int main(int argc, char** argv) {
                                 }
                                 // No problems, decrement
                                 else {
-                                    packet_iphdr->ttl -= (uint8_t)1;  // 8 bits (cast to prevent 32 bit length?)
+                                    printf("size of ipheader is %i\n", sizeof(struct iphdr));
+                                    // packet_iphdr->ttl -= (uint8_t)1;  // 8 bits (cast to prevent 32 bit length?)
+                                    // packet_iphdr->check = 0; //zero out the field for checksum calc
+                                    uint16_t check = 0;
+                                    check = htons((uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr)));
+                                    printf("checksum htons: %0x\n", check);
+                                    check = ntohs((uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr)));
+                                    printf("checksum ntohs: %0x\n", check);
+                                    check = (uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr));
+                                    printf("checksum: %0x\n", check);
+                                    // check = (uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr));
+                                    // printf("checksum: %0x\n", check);
+                                    // packet_iphdr->check = check;
                                     printf("New TTL value: %i\n", packet_iphdr->ttl);
                                     printf("Protocol value: %i\n", packet_iphdr->protocol);
                                 }
@@ -1008,6 +1020,7 @@ int main(int argc, char** argv) {
                                 // sizeof(*packet)
                                 
                                 // Don't send the packet if it's supposed to be dead
+                                sendPacket = 1;
                                 if (sendPacket) {
                                     cout << "   Sending packet to dest" << endl;
                                     send(i, packet->packet, packet->bytes, 0);  
@@ -1277,6 +1290,7 @@ u_short cksum(u_short *buf, int count)
     register u_long sum = 0;
     while (count--)
     {
+        // sum += ntohs(*buf++);
         sum += *buf++;
         if (sum & 0xFFFF0000)
         {
