@@ -64,9 +64,8 @@ struct packetStorage {
     int bytes;
 };
 
-u_short cksum(u_short *buf, int count);
-
-
+uint16_t cksum(uint16_t *buf, int count);
+uint16_t ip_checksum(void* vdata, size_t length);
 
 int main(int argc, char** argv) {
     int packet_socket;
@@ -935,6 +934,28 @@ int main(int argc, char** argv) {
                                 printf("        packet size: %i\n", packet->bytes);
                                 struct iphdr* packet_iphdr = (struct iphdr*) ((packet->packet)+ETHER_HDR_LEN);
 
+                                // TODO Verify IP checksum: might need 2 more chunks (32 bits for options and padding)
+                                // -need to change to host order before calc?
+                                if (ip_checksum(packet_iphdr, sizeof(struct iphdr)) == 0) {
+                                    printf("Checksum valid, keeping packet\n");
+                                } else {
+                                    printf("Checksum invalid, dropping packet\n");
+                                }
+                                uint16_t check = 0, packet_check = packet_iphdr->check;  // network order
+                                packet_iphdr->check = (uint16_t)0;  // set to 0 before calc?
+                                printf("Packet checksum (net): %0x\n", ntohs(packet_check));
+                                //printf("size of iphdr: %i\n", sizeof(struct iphdr));  // 20 bytes
+                                //check = cksum((uint16_t*)packet_iphdr, sizeof(struct iphdr)/2);  // 10 = num of 16 byte chunks
+                                check = ip_checksum(packet_iphdr, sizeof(struct iphdr));  // returns net order
+                                printf("Calculated checksum: %0x\n", ntohs(check));
+                                packet_iphdr->check = check;
+                                //check = htons((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)/2));
+                                //printf("checksum htons: %0x\n", check);
+                                //check = ntohs((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)/2));
+                                //printf("checksum ntohs: %0x\n", check);
+                                //check = (uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)/2);
+                                //printf("checksum: %0x\n", check);
+
                                 // Decrement TTL (not checked until arp reply received)
                                 // Send ICMP error if packet time out, discard packet.
                                 int sendPacket = 1;
@@ -946,16 +967,18 @@ int main(int argc, char** argv) {
                                 // No problems, decrement
                                 else {
                                     printf("size of ipheader is %i\n", sizeof(struct iphdr));
+                                    // Decrement ttl
                                     // packet_iphdr->ttl -= (uint8_t)1;  // 8 bits (cast to prevent 32 bit length?)
                                     // packet_iphdr->check = 0; //zero out the field for checksum calc
-                                    uint16_t check = 0;
-                                    check = htons((uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr)));
-                                    printf("checksum htons: %0x\n", check);
-                                    check = ntohs((uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr)));
-                                    printf("checksum ntohs: %0x\n", check);
-                                    check = (uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr));
-                                    printf("checksum: %0x\n", check);
-                                    // check = (uint16_t) cksum((u_short*) packet_iphdr, sizeof(struct iphdr));
+                                    // uint16_t check = 0, packet_check = packet_iphdr->check;  // network order
+                                    // printf("Packet checksum (net): %i", packet_check);
+                                    // check = htons((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)));
+                                    // printf("checksum htons: %0x\n", check);
+                                    // check = ntohs((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)));
+                                    // printf("checksum ntohs: %0x\n", check);
+                                    // check = (uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr));
+                                    // printf("checksum: %0x\n", check);
+                                    // check = (uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr));
                                     // printf("checksum: %0x\n", check);
                                     // packet_iphdr->check = check;
                                     printf("New TTL value: %i\n", packet_iphdr->ttl);
@@ -1020,7 +1043,7 @@ int main(int argc, char** argv) {
                                 // sizeof(*packet)
                                 
                                 // Don't send the packet if it's supposed to be dead
-                                sendPacket = 1;
+                                sendPacket = 1;  // TODO remove this when working
                                 if (sendPacket) {
                                     cout << "   Sending packet to dest" << endl;
                                     send(i, packet->packet, packet->bytes, 0);  
@@ -1086,7 +1109,7 @@ int main(int argc, char** argv) {
                                     iphdr_reply->protocol = (uint8_t)1; // ICMP packet_iphdr->protocol;
                                     // TODO -- create checksum
 
-                                    iphdr_reply->check = (uint16_t)0;  //checksum is 16b
+                                    iphdr_reply->check = (uint16_t)0;  //checksum is 16b TODO use calc value
                                     iphdr_reply->saddr = packet_iphdr->daddr;
                                     iphdr_reply->daddr = packet_iphdr->saddr;
 
@@ -1284,14 +1307,17 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-
-u_short cksum(u_short *buf, int count)
+/**
+ * This function calculates the checksum. The count is the number of 16 
+ * bit sections.
+ */
+uint16_t cksum(uint16_t *buf, int count)
 {
-    register u_long sum = 0;
+    uint64_t sum = 0;
     while (count--)
     {
-        // sum += ntohs(*buf++);
-        sum += *buf++;
+        sum += ntohs(*buf++);
+        //sum += *buf++;
         if (sum & 0xFFFF0000)
         {
             /* carry occurred,
@@ -1301,11 +1327,42 @@ u_short cksum(u_short *buf, int count)
         }
     }
 
-    return (sum & 0xFFFF);
+    return (uint16_t)(sum & 0xFFFF);
 }
 
+/**
+ * This function calculates the ip checksum.
+ * http://www.microhowto.info/howto/calculate_an_internet_protocol_checksum_in_c.html
+ * Params: pointer to ip header, number of bytes in ip header (20)
+ * Return: ip checksum in network byte order.
+ */
+uint16_t ip_checksum(void* vdata, size_t length) {
+    // Cast the data pointer to one that can be indexed.
+    char* data=(char*)vdata;
 
+    // Initialise the accumulator.
+    uint32_t acc=0xffff;
 
+    // Handle complete 16-bit blocks.
+    for (size_t i=0;i+1<length;i+=2) {
+        uint16_t word;
+        memcpy(&word,data+i,2);
+        acc+=ntohs(word);
+        if (acc>0xffff) {
+            acc-=0xffff;
+        }
+    }
 
+    // Handle any partial block at the end of the data.
+    if (length&1) {
+        uint16_t word=0;
+        memcpy(&word,data+length-1,1);
+        acc+=ntohs(word);
+        if (acc>0xffff) {
+            acc-=0xffff;
+        }
+    }
 
-
+    // Return the checksum in network byte order.
+    return htons(~acc);  // bitwise not
+}
