@@ -435,6 +435,41 @@ int main(int argc, char** argv) {
                         cout << "IPv4 packet found" << endl;  
                         piphdr = (struct iphdr*) (buf+ETHER_HDR_LEN);  // capture ip hdr
                         printf("IP protocol: %u\n", piphdr->protocol);
+                        
+                        // Verify IP checksum: might need 2 more chunks (32 bits for options and padding)
+                        // -need to change to host order before calc?
+                        uint16_t check = 0, packet_check = piphdr->check;  // network order
+                        piphdr->check = (uint16_t)0;  // set to 0 before calc?
+                        printf("Packet checksum: %0x\n", ntohs(packet_check));
+                        check = ip_checksum(piphdr, sizeof(struct iphdr));  // returns net order
+                        printf("Calculated checksum: %0x\n", ntohs(check));
+                        piphdr->check = check;
+                        if (check == packet_check) {
+                            printf("Checksum valid, keeping packet\n");
+                        } else {
+                            printf("Checksum invalid, dropping packet\n");
+                            continue;
+                        }
+
+                        // Decrement TTL (not checked until arp reply received)
+                        // Send ICMP error if packet time out, discard packet.
+                        printf("TTL value: %i\n", piphdr->ttl);
+                        int sendICMP3 = 0;
+                        if (piphdr->ttl <= 1) {
+                            cout << "Time out on packet" << endl;                  
+                        }
+                        // No problems, decrement
+                        else {
+                            printf("size of ipheader is %i\n", sizeof(struct iphdr));
+                            // Decrement ttl
+                            piphdr->ttl -= (uint8_t)1;  // 8 bits (cast to prevent 32 bit length?)
+                            printf("New TTL value: %i\n", piphdr->ttl);
+                            piphdr->check = (uint16_t)0; //zero out the field for checksum calc
+                            // Recalculate and assign checksum
+                            check = ip_checksum(piphdr, sizeof(struct iphdr));  // returns net order
+                            piphdr->check = check;
+                            printf("Protocol value: %i\n", piphdr->protocol);
+                        }
 
                         switch (piphdr->protocol)  // part of IP
                         {
@@ -534,8 +569,10 @@ int main(int argc, char** argv) {
 // - bytes read variable allows this to work?
 // - if have dif hdrs at the same mem distance from ether hdr it shouldn't work
                         case 0x01:  // ICMP
-                        {  
-                            cout << "   ICMP request made" << endl;
+                        { 
+                            if (piphdr->protocol == 1) {
+                                cout << "   ICMP request made" << endl;
+                            }
                             // http://www.cplusplus.com/forum/beginner/123379/
                             // iterate C++98 style
                             {
@@ -584,7 +621,7 @@ int main(int argc, char** argv) {
                                 cout << "   Hop IP addr found in table." << endl;
                                 hopaddrnet = (uint32_t)htonl(hopaddr);
                                 printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
-                            } else {
+                            } else {  // ICMP 3 message takes priority
                                 // TODO NO MATCH: PART 3 ACTION HERE
                                 cout << "   TCP/ICMP: No match found in table." << endl;
                                 cout << "Sending ICMP Destination Unreachable packet." << endl;
@@ -933,58 +970,12 @@ int main(int argc, char** argv) {
                                 printf("        packet type: %0x\n", ntohs(packet_ehdr->ether_type));
                                 printf("        packet size: %i\n", packet->bytes);
                                 struct iphdr* packet_iphdr = (struct iphdr*) ((packet->packet)+ETHER_HDR_LEN);
-
-                                // TODO Verify IP checksum: might need 2 more chunks (32 bits for options and padding)
-                                // -need to change to host order before calc?
-                                if (ip_checksum(packet_iphdr, sizeof(struct iphdr)) == 0) {
-                                    printf("Checksum valid, keeping packet\n");
-                                } else {
-                                    printf("Checksum invalid, dropping packet\n");
-                                }
-                                uint16_t check = 0, packet_check = packet_iphdr->check;  // network order
-                                packet_iphdr->check = (uint16_t)0;  // set to 0 before calc?
-                                printf("Packet checksum (net): %0x\n", ntohs(packet_check));
-                                //printf("size of iphdr: %i\n", sizeof(struct iphdr));  // 20 bytes
-                                //check = cksum((uint16_t*)packet_iphdr, sizeof(struct iphdr)/2);  // 10 = num of 16 byte chunks
-                                check = ip_checksum(packet_iphdr, sizeof(struct iphdr));  // returns net order
-                                printf("Calculated checksum: %0x\n", ntohs(check));
-                                packet_iphdr->check = check;
-                                //check = htons((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)/2));
-                                //printf("checksum htons: %0x\n", check);
-                                //check = ntohs((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)/2));
-                                //printf("checksum ntohs: %0x\n", check);
-                                //check = (uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)/2);
-                                //printf("checksum: %0x\n", check);
-
-                                // Decrement TTL (not checked until arp reply received)
-                                // Send ICMP error if packet time out, discard packet.
                                 int sendPacket = 1;
-                                printf("TTL value: %i\n", packet_iphdr->ttl);
                                 if (packet_iphdr->ttl <= 1) {
-                                    cout << "Time out on packet" << endl;
-                                    sendPacket = 0;                                    
+                                    cout << "Time out on packet" << endl;  
+                                    sendPacket = 0;                
                                 }
-                                // No problems, decrement
-                                else {
-                                    printf("size of ipheader is %i\n", sizeof(struct iphdr));
-                                    // Decrement ttl
-                                    // packet_iphdr->ttl -= (uint8_t)1;  // 8 bits (cast to prevent 32 bit length?)
-                                    // packet_iphdr->check = 0; //zero out the field for checksum calc
-                                    // uint16_t check = 0, packet_check = packet_iphdr->check;  // network order
-                                    // printf("Packet checksum (net): %i", packet_check);
-                                    // check = htons((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)));
-                                    // printf("checksum htons: %0x\n", check);
-                                    // check = ntohs((uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr)));
-                                    // printf("checksum ntohs: %0x\n", check);
-                                    // check = (uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr));
-                                    // printf("checksum: %0x\n", check);
-                                    // check = (uint16_t) cksum((uint16_t*) packet_iphdr, sizeof(struct iphdr));
-                                    // printf("checksum: %0x\n", check);
-                                    // packet_iphdr->check = check;
-                                    printf("New TTL value: %i\n", packet_iphdr->ttl);
-                                    printf("Protocol value: %i\n", packet_iphdr->protocol);
-                                }
-
+                                
                                 // TODO should you do this after sending? mem addr likely still avail though
                                 packets[v].pop_back(); // delete last packet info for dest ipv4 addr  
 
@@ -1029,11 +1020,11 @@ int main(int argc, char** argv) {
 
                                 // memcpy(ehdr_reply->ether_shost, macAddress, ETH_ALEN);
 
-                                // // struct in_addr* in = (struct in_addr*)piphdr->daddr;
-                                // // cout << "       : " << in->s_addr << endl;
-                                // //char* dipv4 = new char(5);
-                                // //inet_ntop(AF_INET, &(piphdr->daddr), dipv4, 4);
-                                // //dipv4[4] = '\0';
+                                // struct in_addr* in = (struct in_addr*)piphdr->daddr;
+                                // cout << "       : " << in->s_addr << endl;
+                                //char* dipv4 = new char(5);
+                                //inet_ntop(AF_INET, &(piphdr->daddr), dipv4, 4);
+                                //dipv4[4] = '\0';
 
                                 // memcpy(eahdr_reply->arp_sha, macAddress, ETH_ALEN);
                                 // memcpy(eahdr_reply->arp_spa, sipv4, 4);
@@ -1043,7 +1034,7 @@ int main(int argc, char** argv) {
                                 // sizeof(*packet)
                                 
                                 // Don't send the packet if it's supposed to be dead
-                                sendPacket = 1;  // TODO remove this when working
+                                //sendPacket = 1;  // TODO remove this when working
                                 if (sendPacket) {
                                     cout << "   Sending packet to dest" << endl;
                                     send(i, packet->packet, packet->bytes, 0);  
@@ -1056,10 +1047,10 @@ int main(int argc, char** argv) {
                                     //http://www.networksorcery.com/enp/protocol/icmp/msg11.htm#Type
                                     int packet_size = ETHER_HDR_LEN + 2*sizeof(struct iphdr) + 
                                         sizeof(struct ouricmp) + 8;  // bytes size
-                                    icmphdr = 
-                                        (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
-                                    tsicmphdr = 
-                                        (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                    // icmphdr = 
+                                    //     (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                    // tsicmphdr = 
+                                    //     (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
                                     // Check for ICMP here (within)
                                     // cout << "ICMP packet found" << endl;
                                     // Create ICMP time exceeded packet and send.
@@ -1070,31 +1061,17 @@ int main(int argc, char** argv) {
                                         (struct iphdr*) (packetICMP+ETHER_HDR_LEN);
                                     struct ouricmp* icmphdr_reply = 
                                         (struct ouricmp*) (packetICMP+ETHER_HDR_LEN+sizeof(struct iphdr));
-
                                     icmphdr_reply->type = (uint8_t)htons(11);  //8
                                     icmphdr_reply->code = (uint8_t)0;  //8
-                                    // TODO: create checksum
-
-
-                                    icmphdr_reply->checksum = (uint16_t)0;
                                     // id and sequence fields are unused - set to 0
                                     icmphdr_reply->id = (uint16_t)0;
                                     icmphdr_reply->sequence = (uint16_t)0;
-                                    
-                                    //Copy first 8 bytes of original packet
-                                    //TODO: accessing right bytes? Should it be offset less or more?
-                                    // TCP header? is it between ip and data?
-                                    memcpy(packetICMP + packet_size - 8, 
-                                        (packet->packet) + ETHER_HDR_LEN + sizeof(struct iphdr), 
-                                        8);
+                                    icmphdr_reply->checksum = (uint16_t)0;
 
                                     //ethernet header
                                     ehdr_reply->ether_type = packet_ehdr->ether_type;
                                     memcpy(ehdr_reply->ether_shost, packet_ehdr->ether_dhost, ETH_ALEN);
-                                    // We don't know the next destination link so store this packet and 
-                                    // send out an ARP request
-                                    uint8_t broadcast[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-                                    memcpy(ehdr_reply->ether_dhost, broadcast, ETH_ALEN);
+                                    memcpy(ehdr_reply->ether_dhost, packet_ehdr->ether_shost, ETH_ALEN);
 
                                     // TODO -- confirm that copying IP values from original packet is ok
                                     // Maybe needs to be changed depending on error type??
@@ -1105,174 +1082,25 @@ int main(int argc, char** argv) {
                                     iphdr_reply->tot_len = packet_iphdr->tot_len;
                                     iphdr_reply->id = packet_iphdr->id;
                                     iphdr_reply->frag_off = packet_iphdr->frag_off;
-                                    iphdr_reply->ttl = (uint8_t)htons(64);  //ttl is 8 bits
+                                    iphdr_reply->ttl = (uint8_t)htons(64);  //ttl is 8 bits, chose 64 value
                                     iphdr_reply->protocol = (uint8_t)1; // ICMP packet_iphdr->protocol;
-                                    // TODO -- create checksum
-
-                                    iphdr_reply->check = (uint16_t)0;  //checksum is 16b TODO use calc value
                                     iphdr_reply->saddr = packet_iphdr->daddr;
                                     iphdr_reply->daddr = packet_iphdr->saddr;
-
-                                    // send(i, packet, packet_size, 0);
-
-                                    //---------------------------------------------------
-                                    // Create ARP packet
-                                    //---------------------------------------------------
-
-                                    // Forward packet to dest:
-                                    // Look up dest addr from table to get ip 
-                                    // addr of next hop. Prefixes all 16 or 24 bits. 
-                                    // Max of one match possible.
-                                    uint32_t daddr = (uint32_t)ntohl(packet_iphdr->saddr);  // 32 bits
-                                    uint32_t hopaddr, hopaddrnet;
-                                    int portNum;
-                                    std::map<uint32_t, uint32_t>::iterator it;
-                                    char* sipv4; //router ipv4
-                                    printf("    Dest ip addr: %#X\n", daddr);
-                                    printf("    or %s\n", inet_ntoa(*(struct in_addr*)&(packet_iphdr->saddr)));
-                                    if ((it=net2hop.find(daddr & 0xffffff00)) != net2hop.end() ) {  // 16 bit netlength
-                                        hopaddr = net2hop[daddr & 0xffffff00];
-                                        char* interface = net2if[daddr & 0xffffff00];
-                                        cout << "   interface (1): " << interface << endl;
-                                        string s(interface);
-                                        portNum = name2port[s];
-                                        sipv4 = name2ip[s];
-                                        cout << "   port: " << portNum << endl;
-                                        cout << "   Hop IP addr found in table." << endl;
-                                        hopaddrnet = (uint32_t)htonl(hopaddr);
-                                        printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
-
-                                    } else if ((it=net2hop.find(daddr & 0xffff0000)) != net2hop.end() ) {  // 24 bit netlength
-                                        hopaddr = net2hop[daddr & 0xffff0000];
-                                        char* interface = net2if[daddr & 0xffff0000];
-                                        cout << "   interface (2): " << interface << endl;
-                                        string s(interface);
-                                        portNum = name2port[s];
-                                        sipv4 = name2ip[s];
-                                        cout << "   port: " << portNum << endl;
-                                        cout << "   Hop IP addr found in table." << endl;
-                                        hopaddrnet = (uint32_t)htonl(hopaddr);
-                                        printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
-                                    } else {
-                                        // TODO NO MATCH: PART 3 ACTION HERE
-                                        cout << "   No match found in table." << endl;
-                                        // This shouldn't happen here? leave blank for now..
-                                        break;
-                                    }
-
-                                    if (hopaddr == 0)  // no hop for this network
-                                    {
-                                        hopaddr = packet_iphdr->saddr;
-                                    } else {
-                                        hopaddr = (uint32_t)htonl(hopaddr); //flip it
-                                    }
-
-                                    //contruct hop address as an octet array x.x.x.x
-                                    // char* str = inet_ntoa(*(struct in_addr*)&(piphdr->daddr));
-                                    // uint32_t backwards = htons(hopaddr);
-                                    char* str = inet_ntoa(*(struct in_addr*)&(hopaddr));
-
-                                    char * pch;
-                                    char* dipv4 = new char[4];  // was char(4)
-                                    int index = 0;
-                                    // printf ("Splitting string \"%s\" into tokens:\n",str);
-                                    pch = strtok (str,".");
-                                    dipv4[index++] = atoi(pch);
-                                    for (int k = 1; k < 4; k++) {
-                                        // printf("%s\n",pch);
-                                        pch = strtok (NULL, ".");
-                                        dipv4[index++] = atoi(pch);
-                                    }
-
-                                    // Store packet for later forwarding
-                                    struct packetStorage* pckt = new (struct packetStorage);
-
-                                    // pckt->packet = buf;
-                                    pckt->packet = new char[packet_size];
-                                    // for (int k = 0; k < bytes_n; k++) {
-                                        memcpy(pckt->packet, packet, packet_size);
-                                    // }
-                                    pckt->bytes = bytes_n;
-                                    vector<uint8_t> v;
-                                    v.push_back(dipv4[0]);
-                                    v.push_back(dipv4[1]);
-                                    v.push_back(dipv4[2]);
-                                    v.push_back(dipv4[3]);
-
-                                    cout << "       dest network address: " ;//<< dipv4 <<endl;
-                                    printf("%i.%i.%i.%i\n",(unsigned int)v[0],
-                                                            (unsigned int)v[1],
-                                                            (unsigned int)v[2],
-                                                            (unsigned int)v[3]);
-
-                                    packets[v].push_back(pckt);
-
-                                    printf("        size of packets[v]: %i\n", packets[v].size());
-                                    if (packets[v].size() > 0) {
-                                        // printf("        packet: %0x\n", packets[v].back()->packet);
-                                        // struct iphdr* a = (struct iphdr*) (packets[v].back()->packet+ETHER_HDR_LEN);
-                                        // printf("        packet type: %i\n", a->protocol);
-                                        // printf("        size of packets[v]: %i\n", packets[v].size());
-
-                                        printf("        packet: %0x\n", packets[v].back()->packet);
-                                        // struct iphdr* a = (struct iphdr*) (packet->packet+ETHER_HDR_LEN);
-                                        struct ether_header* a = (struct ether_header*) (packets[v].back()->packet);
-                                        // printf("        packet type: %0x\n", a->protocol);
-                                        printf("        packet type: %0x\n", ntohs(a->ether_type));
-                                        printf("        original packet type: %0x\n", ntohs(pehdr->ether_type));
-                                        printf("        packet size: %i\n", packets[v].back()->bytes);
-                                    }
+                                    iphdr_reply->check = ip_checksum(iphdr_reply, sizeof(iphdr));
                                     
-                                    printf("    router ip %i.%i.%i.%i\n",
-                                        (unsigned char) sipv4[0],
-                                        (unsigned char) sipv4[1],
-                                        (unsigned char) sipv4[2],
-                                        (unsigned char) sipv4[3]
-                                        );
-                                    cout << "       Using ARP to get MAC addr for hop" << endl;
-                                    // send ARP request
-                                    uint8_t packetARP[sizeof(struct ether_header) + sizeof(struct ether_arp)];
-                                    struct ether_header* ehdr_replyARP = (struct ether_header*) packetARP;
-                                    //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
-                                    struct ether_arp* eahdr_replyARP = (struct ether_arp*) (packetARP+ETHER_HDR_LEN);
-                                    ehdr_replyARP->ether_type = htons(0x0806); //ARP
-                                    // memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
-                                    //uint8_t broadcast[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
-                                    memcpy(ehdr_replyARP->ether_dhost, broadcast, ETH_ALEN);
-                                    // ehdr_reply->ether_dhost = ; //broadcast
-                                    eahdr_replyARP->arp_op = htons(1);// ARP request
-                                    eahdr_replyARP->arp_hrd = htons(1);// ethernet //peahdr->arp_hrd;
-                                    eahdr_replyARP->arp_pro = htons(0x0800);// IP //peahdr->arp_pro;
-                                    eahdr_replyARP->arp_hln = 6;// //peahdr->arp_hln;
-                                    eahdr_replyARP->arp_pln = 4;// //peahdr->arp_pln;
+                                    // TODO Append ip header and first 8 bytes of data to packet
+                                    memcpy(icmphdr_reply+sizeof(ouricmp), iphdr_reply, sizeof(struct iphdr));
+                                    //TODO: accessing right bytes? Should it be offset less or more?
+                                    // TCP header? is it between ip and data?
+                                    memcpy(packetICMP + packet_size - 8, 
+                                        (packet->packet) + ETHER_HDR_LEN + sizeof(struct iphdr), 
+                                        8);
 
-                                    char* t = port2mac[portNum];
-                                    uint8_t macAddress[6] = {
-                                            (uint8_t) t[0],
-                                            (uint8_t) t[1],
-                                            (uint8_t) t[2],
-                                            (uint8_t) t[3],
-                                            (uint8_t) t[4],
-                                            (uint8_t) t[5],
-                                        };
-                                    cout << "       Source MAC: ";
-                                    printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-                                        (unsigned char) macAddress[0],
-                                        (unsigned char) macAddress[1],
-                                        (unsigned char) macAddress[2],
-                                        (unsigned char) macAddress[3],
-                                        (unsigned char) macAddress[4],
-                                        (unsigned char) macAddress[5]
-                                        );
-                                    memcpy(ehdr_replyARP->ether_shost, macAddress, ETH_ALEN);
+                                    // TODO Calculate ICMP 11 checksum: for icmp header to end of packet
+                                    icmphdr_reply->checksum = ip_checksum(icmphdr_reply, 
+                                        sizeof(struct ouricmp) + sizeof(struct iphdr) + 8);
 
-                                    memcpy(eahdr_replyARP->arp_sha, macAddress, ETH_ALEN);
-                                    memcpy(eahdr_replyARP->arp_spa, sipv4, 4);
-                                    memcpy(eahdr_replyARP->arp_tha, broadcast, ETH_ALEN);
-                                    memcpy(eahdr_replyARP->arp_tpa, dipv4, 4);
-
-                                    send(portNum, packetARP, sizeof(struct ether_header) + 
-                                        sizeof(struct ether_arp), 0);
+                                    send(i, packetICMP, packet_size, 0);
                                 }  // endof icmp 11
                             }  // end of while to send matching packets after ARP reply
 
@@ -1331,9 +1159,10 @@ uint16_t cksum(uint16_t *buf, int count)
 }
 
 /**
- * This function calculates the ip checksum.
+ * This function calculates the ip checksum. Pass in network byte order with the
+ * checksum field already zeroed. This handles padding to fit 16 byte multiples.
  * http://www.microhowto.info/howto/calculate_an_internet_protocol_checksum_in_c.html
- * Params: pointer to ip header, number of bytes in ip header (20)
+ * Params: pointer to ip header (use network order), number of bytes in ip header (20)
  * Return: ip checksum in network byte order.
  */
 uint16_t ip_checksum(void* vdata, size_t length) {
