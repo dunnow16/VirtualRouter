@@ -621,12 +621,69 @@ int main(int argc, char** argv) {
                                 cout << "   Hop IP addr found in table." << endl;
                                 hopaddrnet = (uint32_t)htonl(hopaddr);
                                 printf("    hop addr: %s\n", inet_ntoa(*(struct in_addr*)&hopaddrnet));
-                            } else {  // ICMP 3 message takes priority
-                                // TODO NO MATCH: PART 3 ACTION HERE
+                            } else {  // TODO ICMP 3 message
                                 cout << "   TCP/ICMP: No match found in table." << endl;
-                                cout << "Sending ICMP Destination Unreachable packet." << endl;
+                                cout << "Sending ICMP Destination (network) Unreachable packet." << endl;
+                                int packet_size = ETHER_HDR_LEN + 2*sizeof(struct iphdr) + 
+                                        sizeof(struct ouricmp) + 8;  // bytes size
+                                struct ouricmp* icmphdr = 
+                                    (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                uint8_t packetICMP[packet_size];
+                                struct ether_header* ehdr_reply = (struct ether_header*) packetICMP;
+                                //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
+                                struct iphdr* iphdr_reply = 
+                                    (struct iphdr*) (packetICMP + ETHER_HDR_LEN);
+                                // Wireshark shows timestamp for ping (use that struct?)
+                                struct ouricmp* icmphdr_reply = 
+                                    (struct ouricmp*) (packetICMP + ETHER_HDR_LEN + sizeof(struct iphdr));
+                                icmphdr_reply->type = (uint8_t)3;  //8
+                                icmphdr_reply->code = (uint8_t)0;  //8 (network unreachable)
+                                // id and sequence fields are unused - set to 0
+                                icmphdr_reply->id = (uint16_t)0;
+                                icmphdr_reply->sequence = (uint16_t)0;  // next hop MTU (set to 0 as not code 4?)
+                                icmphdr_reply->checksum = (uint16_t)0;
+                                //icmphdr_reply->timestamp = (uint64_t)0;  // TODO set to what?
 
+                                //ethernet header
+                                ehdr_reply->ether_type = pehdr->ether_type;
+                                memcpy(ehdr_reply->ether_shost, pehdr->ether_dhost, ETH_ALEN);
+                                memcpy(ehdr_reply->ether_dhost, pehdr->ether_shost, ETH_ALEN);
 
+                                // TODO -- confirm that copying IP values from original packet is ok
+                                // Maybe needs to be changed depending on error type??
+                                // I changed protocol to icmp from likely tcp
+                                memcpy(iphdr_reply, piphdr, sizeof(struct iphdr));
+                                // TODO is something here causing the problem?
+                                // iphdr_reply->ihl = packet_iphdr->ihl;
+                                // iphdr_reply->version = packet_iphdr->version;  // 1 byte
+                                // iphdr_reply->tos = packet_iphdr->tos;
+                                //iphdr_reply->tot_len = packet_iphdr->tot_len;
+                                //iphdr_reply->tot_len = ; // actually calc length of packet needed?
+                                // iphdr_reply->id = packet_iphdr->id;
+                                // iphdr_reply->frag_off = packet_iphdr->frag_off;
+                                iphdr_reply->ttl = (uint8_t)htons(64);  //ttl is 8 bits, chose 64 value
+                                iphdr_reply->protocol = (uint8_t)1; // ICMP packet_iphdr->protocol;
+                                // Find routers ip based on hosts ip with 1 as last value (works for this network only)
+                                iphdr_reply->saddr = (((piphdr->saddr) & 0xffffff00) & 0xffffff01);  // the router's ip addr
+                                iphdr_reply->daddr = piphdr->saddr;
+                                iphdr_reply->check = ip_checksum(iphdr_reply, sizeof(struct iphdr));
+                                printf("ICMP 3, ip checksum: %0x\n", iphdr_reply->check);
+                                
+                                // TODO Append ip header and first 8 bytes of data from original packet
+                                memcpy(icmphdr_reply+sizeof(struct ouricmp), piphdr, sizeof(struct iphdr));
+                                //TODO: accessing right bytes? Should it be offset less or more?
+                                // TCP header? is it between ip and data?
+                                memcpy(packetICMP + packet_size - 8, 
+                                    (buf) + ETHER_HDR_LEN + sizeof(struct iphdr), 
+                                    8);
+
+                                // TODO Calculate ICMP 3 checksum: for icmp header to end of packet
+                                icmphdr_reply->checksum = ip_checksum(icmphdr_reply, 
+                                    sizeof(struct ouricmp) + sizeof(struct iphdr) + 8);
+                                printf("ICMP 3 checksum: %0x\n", icmphdr_reply->checksum);
+
+                                cout << "sending ICMP destination unreachable message" << endl;
+                                send(i, packetICMP, packet_size, 0);
 
                                 break;
                             }
@@ -1089,7 +1146,8 @@ int main(int argc, char** argv) {
                                     // iphdr_reply->frag_off = packet_iphdr->frag_off;
                                     iphdr_reply->ttl = (uint8_t)htons(64);  //ttl is 8 bits, chose 64 value
                                     iphdr_reply->protocol = (uint8_t)1; // ICMP packet_iphdr->protocol;
-                                    iphdr_reply->saddr = packet_iphdr->daddr;
+                                    // Mac2Ip would be better (does this work? (for this network))
+                                    iphdr_reply->saddr = (((piphdr->saddr) & 0xffffff00) & 0xffffff01);//packet_iphdr->daddr;
                                     iphdr_reply->daddr = packet_iphdr->saddr;
                                     iphdr_reply->check = ip_checksum(iphdr_reply, sizeof(struct iphdr));
                                     printf("ICMP 11, ip checksum: %0x\n", iphdr_reply->check);
