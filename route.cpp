@@ -44,19 +44,19 @@
 using namespace std;
 
 struct ouricmp {  // 64 bytes
-    u_int8_t type;
-    u_int8_t code;
-    u_int16_t checksum;
-    u_int16_t id;  // id and
-    u_int16_t sequence;
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint16_t id;  // id and
+    uint16_t sequence;
 };
 struct ouricmpts {  // 128 bytes
-    u_int8_t type;
-    u_int8_t code;
-    u_int16_t checksum;
-    u_int16_t id;
-    u_int16_t sequence;
-    u_int64_t timestamp;
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint16_t id;
+    uint16_t sequence;
+    uint64_t timestamp;
 };
 
 struct packetStorage {
@@ -1047,10 +1047,10 @@ int main(int argc, char** argv) {
                                     //http://www.networksorcery.com/enp/protocol/icmp/msg11.htm#Type
                                     int packet_size = ETHER_HDR_LEN + 2*sizeof(struct iphdr) + 
                                         sizeof(struct ouricmp) + 8;  // bytes size
-                                    // icmphdr = 
-                                    //     (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
-                                    // tsicmphdr = 
-                                    //     (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                    icmphdr = 
+                                        (struct ouricmp*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
+                                    tsicmphdr = 
+                                        (struct ouricmpts*) (buf+ETHER_HDR_LEN+sizeof(struct iphdr));
                                     // Check for ICMP here (within)
                                     // cout << "ICMP packet found" << endl;
                                     // Create ICMP time exceeded packet and send.
@@ -1058,15 +1058,17 @@ int main(int argc, char** argv) {
                                     struct ether_header* ehdr_reply = (struct ether_header*) packetICMP;
                                     //struct aphdr* eahdr_reply = (struct aphdr*) (packet+ETHER_HDR_LEN);
                                     struct iphdr* iphdr_reply = 
-                                        (struct iphdr*) (packetICMP+ETHER_HDR_LEN);
+                                        (struct iphdr*) (packetICMP + ETHER_HDR_LEN);
+                                    // Wireshark uses timestamp for ping (use that struct?)
                                     struct ouricmp* icmphdr_reply = 
-                                        (struct ouricmp*) (packetICMP+ETHER_HDR_LEN+sizeof(struct iphdr));
-                                    icmphdr_reply->type = (uint8_t)htons(11);  //8
+                                        (struct ouricmp*) (packetICMP + ETHER_HDR_LEN + sizeof(struct iphdr));
+                                    icmphdr_reply->type = (uint8_t)11;  //8
                                     icmphdr_reply->code = (uint8_t)0;  //8
                                     // id and sequence fields are unused - set to 0
                                     icmphdr_reply->id = (uint16_t)0;
                                     icmphdr_reply->sequence = (uint16_t)0;
                                     icmphdr_reply->checksum = (uint16_t)0;
+                                    //icmphdr_reply->timestamp = (uint64_t)0;  // TODO set to what?
 
                                     //ethernet header
                                     ehdr_reply->ether_type = packet_ehdr->ether_type;
@@ -1076,20 +1078,24 @@ int main(int argc, char** argv) {
                                     // TODO -- confirm that copying IP values from original packet is ok
                                     // Maybe needs to be changed depending on error type??
                                     // I changed protocol to icmp from likely tcp
-                                    iphdr_reply->ihl = packet_iphdr->ihl;
-                                    iphdr_reply->version = packet_iphdr->version;
-                                    iphdr_reply->tos = packet_iphdr->tos;
-                                    iphdr_reply->tot_len = packet_iphdr->tot_len;
-                                    iphdr_reply->id = packet_iphdr->id;
-                                    iphdr_reply->frag_off = packet_iphdr->frag_off;
+                                    memcpy(iphdr_reply, packet_iphdr, sizeof(struct iphdr));
+                                    // TODO is something here causing the problem?
+                                    // iphdr_reply->ihl = packet_iphdr->ihl;
+                                    // iphdr_reply->version = packet_iphdr->version;  // 1 byte
+                                    // iphdr_reply->tos = packet_iphdr->tos;
+                                    //iphdr_reply->tot_len = packet_iphdr->tot_len;
+                                    //iphdr_reply->tot_len = ; // actually calc length of packet needed?
+                                    // iphdr_reply->id = packet_iphdr->id;
+                                    // iphdr_reply->frag_off = packet_iphdr->frag_off;
                                     iphdr_reply->ttl = (uint8_t)htons(64);  //ttl is 8 bits, chose 64 value
                                     iphdr_reply->protocol = (uint8_t)1; // ICMP packet_iphdr->protocol;
                                     iphdr_reply->saddr = packet_iphdr->daddr;
                                     iphdr_reply->daddr = packet_iphdr->saddr;
-                                    iphdr_reply->check = ip_checksum(iphdr_reply, sizeof(iphdr));
+                                    iphdr_reply->check = ip_checksum(iphdr_reply, sizeof(struct iphdr));
+                                    printf("ICMP 11, ip checksum: %0x\n", iphdr_reply->check);
                                     
-                                    // TODO Append ip header and first 8 bytes of data to packet
-                                    memcpy(icmphdr_reply+sizeof(ouricmp), iphdr_reply, sizeof(struct iphdr));
+                                    // TODO Append ip header and first 8 bytes of data from original packet
+                                    memcpy(icmphdr_reply+sizeof(struct ouricmp), packet_iphdr, sizeof(struct iphdr));
                                     //TODO: accessing right bytes? Should it be offset less or more?
                                     // TCP header? is it between ip and data?
                                     memcpy(packetICMP + packet_size - 8, 
@@ -1099,7 +1105,9 @@ int main(int argc, char** argv) {
                                     // TODO Calculate ICMP 11 checksum: for icmp header to end of packet
                                     icmphdr_reply->checksum = ip_checksum(icmphdr_reply, 
                                         sizeof(struct ouricmp) + sizeof(struct iphdr) + 8);
+                                    printf("ICMP 11 checksum: %0x\n", icmphdr_reply->checksum);
 
+                                    cout << "sending ICMP timeout message" << endl;
                                     send(i, packetICMP, packet_size, 0);
                                 }  // endof icmp 11
                             }  // end of while to send matching packets after ARP reply
